@@ -36,7 +36,6 @@ const AppContent: React.FC = () => {
 
   // Load Data and Set up Listener
   useEffect(() => {
-    console.log('App mounted, loading data and setting up listeners.');
     const loadData = () => {
         setProducts(StorageService.getProducts());
         setSiteConfig(StorageService.getSiteConfig());

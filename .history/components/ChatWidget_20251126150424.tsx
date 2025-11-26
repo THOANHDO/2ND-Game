@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-// import { GeminiService } from '../services/geminiService';
+import { GeminiService } from '../services/geminiService';
 import { ChatMessage, SiteConfig } from '../types';
 import { StorageService } from '../services/storage';
 
@@ -36,9 +36,9 @@ const ChatWidget: React.FC = () => {
     setIsLoading(true);
 
     const historyForAi = messages.map(m => ({ role: m.role, text: m.text }));
-    // const aiResponseText = await GeminiService.chatWithAssistant(historyForAi, userMsg.text);
+    const aiResponseText = await GeminiService.chatWithAssistant(historyForAi, userMsg.text);
 
-    setMessages(prev => [...prev, { role: 'model', text: 'hi' }]);
+    setMessages(prev => [...prev, { role: 'model', text: aiResponseText }]);
     setIsLoading(false);
   };
 
