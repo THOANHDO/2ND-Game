@@ -1,11 +1,14 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { StorageService } from '../services/storage';
-import { Product, Order, User, HeroSlide, OrderStatus, SiteConfig, Category } from '../types';
+import { Product, Order, User, HeroSlide, OrderStatus, SiteConfig, Category, StockImport, PageContent } from '../types';
 import { fileToBase64 } from '../utils/helpers';
 
 type Tab = 'DASHBOARD' | 'PRODUCTS' | 'CATEGORIES' | 'ORDERS' | 'CUSTOMERS' | 'CONTENT';
+type ContentSubTab = 'HERO' | 'AUTH' | 'FOOTER' | 'GENERAL';
+type AuthPageType = 'login' | 'register' | 'forgotPassword';
 
 // Available Material Icons for Picker
 const AVAILABLE_ICONS = [
@@ -18,16 +21,29 @@ const AVAILABLE_ICONS = [
 
 const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('DASHBOARD');
+  
+  // Content Sub-navigation state
+  const [contentSubTab, setContentSubTab] = useState<ContentSubTab>('HERO');
+  const [activeAuthPage, setActiveAuthPage] = useState<AuthPageType>('login');
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [slides, setSlides] = useState<HeroSlide[]>([]);
+  const [stockImports, setStockImports] = useState<StockImport[]>([]);
   const [siteConfig, setSiteConfig] = useState<SiteConfig>({ facebookUrl: '' });
 
   // Product Editing State
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isEditingProduct, setIsEditingProduct] = useState(false);
+
+  // Import Stock State
+  const [isImportingStock, setIsImportingStock] = useState(false);
+  const [importTarget, setImportTarget] = useState<Product | null>(null);
+  const [importQty, setImportQty] = useState(1);
+  const [importCost, setImportCost] = useState(0);
+  const [importNote, setImportNote] = useState('');
 
   // Category Editing State
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -49,7 +65,69 @@ const AdminDashboard: React.FC = () => {
     setOrders(StorageService.getOrders());
     setUsers(StorageService.getUsers());
     setSlides(StorageService.getHeroSlides());
+    setStockImports(StorageService.getStockImports());
     setSiteConfig(StorageService.getSiteConfig());
+  };
+
+  // --- Calculations for Dashboard ---
+  
+  const getAgeDistribution = () => {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const groups = {
+          'Dưới 18': 0,
+          '18 - 24': 0,
+          '25 - 34': 0,
+          'Trên 35': 0,
+          'Chưa rõ': 0
+      };
+      
+      let total = 0;
+      users.forEach(u => {
+          if (u.role === 'ADMIN') return; // Skip admin
+          total++;
+          if (!u.dob) {
+              groups['Chưa rõ']++;
+              return;
+          }
+          const birthYear = new Date(u.dob).getFullYear();
+          const age = currentYear - birthYear;
+          
+          if (age < 18) groups['Dưới 18']++;
+          else if (age <= 24) groups['18 - 24']++;
+          else if (age <= 34) groups['25 - 34']++;
+          else groups['Trên 35']++;
+      });
+      
+      // Convert to percentages
+      return Object.entries(groups).map(([label, count]) => ({
+          label,
+          count,
+          percent: total === 0 ? 0 : Math.round((count / total) * 100)
+      }));
+  };
+
+  const getCityDistribution = () => {
+      const cityCounts: Record<string, number> = {};
+      let total = 0;
+      users.forEach(u => {
+          if (u.role === 'ADMIN') return;
+          total++;
+          const city = u.city || 'Chưa rõ';
+          cityCounts[city] = (cityCounts[city] || 0) + 1;
+      });
+
+      // Sort and take top 5
+      const sorted = Object.entries(cityCounts)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 5)
+          .map(([label, count]) => ({
+              label,
+              count,
+              percent: total === 0 ? 0 : Math.round((count / total) * 100)
+          }));
+      
+      return sorted;
   };
 
   // --- Handlers ---
@@ -71,6 +149,25 @@ const AdminDashboard: React.FC = () => {
           setEditingProduct(null);
           refreshData();
           alert("Lưu sản phẩm thành công!");
+      }
+  };
+
+  const openImportModal = (product: Product) => {
+      setImportTarget(product);
+      setImportQty(10);
+      setImportCost(product.price * 0.7); // Suggested import cost (70% of retail)
+      setImportNote('');
+      setIsImportingStock(true);
+  };
+
+  const handleImportStock = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (importTarget) {
+          StorageService.importProduct(importTarget.id, importQty, importCost, importNote);
+          refreshData();
+          setIsImportingStock(false);
+          setImportTarget(null);
+          alert(`Đã nhập thêm ${importQty} sản phẩm vào kho!`);
       }
   };
 
@@ -199,7 +296,7 @@ const AdminDashboard: React.FC = () => {
       }
   };
 
-  const handleAuthImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'login' | 'register') => {
+  const handleAuthImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: AuthPageType) => {
       if (e.target.files && e.target.files[0] && siteConfig.authConfig) {
           try {
               const base64 = await fileToBase64(e.target.files[0]);
@@ -266,37 +363,141 @@ const AdminDashboard: React.FC = () => {
 
   // --- Renderers ---
 
-  const renderDashboard = () => (
-      <div className="grid md:grid-cols-3 gap-6 animate-fade-in-up">
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-              <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">Tổng Doanh Thu</h3>
-              <p className="text-3xl font-black text-gray-900 mt-2">
-                  {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(orders.reduce((acc, o) => acc + o.totalAmount, 0))}
-              </p>
-              <span className="text-green-500 text-xs font-bold mt-2 inline-flex items-center gap-1">
-                  <span className="material-icons-round text-sm">trending_up</span>
-                  Tăng trưởng tốt
-              </span>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-              <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">Đơn Hàng</h3>
-              <p className="text-3xl font-black text-gray-900 mt-2">{orders.length}</p>
-              <div className="flex gap-2 mt-3">
-                  <span className="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-0.5 rounded">
-                      {orders.filter(o => o.orderStatus === OrderStatus.PROCESSING).length} Chờ xử lý
+  const renderDashboard = () => {
+      const ageStats = getAgeDistribution();
+      const cityStats = getCityDistribution();
+
+      return (
+      <div className="space-y-6 animate-fade-in-up">
+          {/* Key Metrics */}
+          <div className="grid md:grid-cols-3 gap-6">
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                  <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">Tổng Doanh Thu (Ước tính)</h3>
+                  <p className="text-3xl font-black text-gray-900 mt-2">
+                      {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(orders.reduce((acc, o) => acc + o.totalAmount, 0))}
+                  </p>
+                  <span className="text-green-500 text-xs font-bold mt-2 inline-flex items-center gap-1">
+                      <span className="material-icons-round text-sm">trending_up</span>
+                      Tăng trưởng tốt
                   </span>
-                  <span className="bg-green-100 text-green-800 text-xs font-bold px-2 py-0.5 rounded">
-                      {orders.filter(o => o.orderStatus === OrderStatus.DELIVERED).length} Hoàn thành
+              </div>
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                  <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">Đơn Hàng</h3>
+                  <p className="text-3xl font-black text-gray-900 mt-2">{orders.length}</p>
+                  <div className="flex gap-2 mt-3">
+                      <span className="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-0.5 rounded">
+                          {orders.filter(o => o.orderStatus === OrderStatus.PROCESSING).length} Chờ xử lý
+                      </span>
+                  </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                  <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">Tổng Tồn Kho</h3>
+                  <p className="text-3xl font-black text-gray-900 mt-2">
+                    {products.reduce((acc, p) => acc + p.stock, 0)} <span className="text-base font-normal text-gray-500">sản phẩm</span>
+                  </p>
+                  <span className="text-xs font-bold text-gray-400 mt-2 inline-block">
+                     Giá trị kho: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(products.reduce((acc, p) => acc + (p.stock * p.price), 0))}
                   </span>
               </div>
           </div>
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-              <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">Khách Hàng</h3>
-              <p className="text-3xl font-black text-gray-900 mt-2">{users.length}</p>
-              <span className="text-gray-400 text-xs font-bold mt-2 inline-block">Thành viên đã đăng ký</span>
+          
+          <div className="grid lg:grid-cols-2 gap-6">
+              {/* Customer Analytics - Demographics */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                  <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
+                       <span className="material-icons-round text-blue-500">pie_chart</span>
+                       Phân tích Khách Hàng
+                  </h3>
+                  
+                  <div className="space-y-6">
+                      {/* Age Distribution */}
+                      <div>
+                          <h4 className="text-xs font-bold text-gray-500 uppercase mb-3">Tỷ lệ theo độ tuổi</h4>
+                          <div className="space-y-3">
+                              {ageStats.map((stat, idx) => (
+                                  <div key={idx}>
+                                      <div className="flex justify-between text-sm mb-1">
+                                          <span className="text-gray-700 font-medium">{stat.label}</span>
+                                          <span className="text-gray-500">{stat.percent}% ({stat.count})</span>
+                                      </div>
+                                      <div className="w-full bg-gray-100 rounded-full h-2.5">
+                                          <div className="bg-blue-500 h-2.5 rounded-full transition-all duration-1000" style={{ width: `${stat.percent}%` }}></div>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+
+                       {/* City Distribution */}
+                       <div className="pt-4 border-t border-gray-100">
+                          <h4 className="text-xs font-bold text-gray-500 uppercase mb-3">Khu vực sinh sống (Top 5)</h4>
+                          <div className="space-y-3">
+                              {cityStats.map((stat, idx) => (
+                                  <div key={idx}>
+                                      <div className="flex justify-between text-sm mb-1">
+                                          <span className="text-gray-700 font-medium">{stat.label}</span>
+                                          <span className="text-gray-500">{stat.percent}% ({stat.count})</span>
+                                      </div>
+                                      <div className="w-full bg-gray-100 rounded-full h-2.5">
+                                          <div className="bg-nintendo-red h-2.5 rounded-full transition-all duration-1000" style={{ width: `${stat.percent}%` }}></div>
+                                      </div>
+                                  </div>
+                              ))}
+                              {cityStats.length === 0 && <p className="text-sm text-gray-400 italic">Chưa có dữ liệu địa điểm.</p>}
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+               {/* Import History Log */}
+               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col">
+                   <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
+                       <span className="material-icons-round text-green-600">history</span>
+                       Lịch sử Nhập hàng Gần nhất
+                   </h3>
+                   <div className="flex-grow overflow-auto">
+                       {stockImports.length === 0 ? (
+                           <div className="text-center py-10 text-gray-400 text-sm">Chưa có lịch sử nhập hàng.</div>
+                       ) : (
+                           <table className="w-full text-left text-sm">
+                               <thead className="bg-gray-50">
+                                   <tr>
+                                       <th className="px-4 py-2 text-gray-500 font-medium">Sản phẩm</th>
+                                       <th className="px-4 py-2 text-gray-500 font-medium">SL</th>
+                                       <th className="px-4 py-2 text-gray-500 font-medium">Thời gian</th>
+                                   </tr>
+                               </thead>
+                               <tbody className="divide-y divide-gray-100">
+                                   {stockImports.slice(0, 8).map(imp => {
+                                       const prod = products.find(p => p.id === imp.productId);
+                                       return (
+                                           <tr key={imp.id}>
+                                               <td className="px-4 py-3">
+                                                   <p className="font-bold text-gray-800 line-clamp-1">{prod?.title || 'Unknown Product'}</p>
+                                                   <p className="text-xs text-gray-400">{imp.note || 'Nhập kho'}</p>
+                                               </td>
+                                               <td className="px-4 py-3 font-bold text-green-600">+{imp.quantity}</td>
+                                               <td className="px-4 py-3 text-xs text-gray-500">
+                                                   {new Date(imp.timestamp).toLocaleDateString('vi-VN')}
+                                                   <br/>
+                                                   {new Date(imp.timestamp).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
+                                               </td>
+                                           </tr>
+                                       );
+                                   })}
+                               </tbody>
+                           </table>
+                       )}
+                   </div>
+                   <div className="mt-4 pt-4 border-t border-gray-100 text-center">
+                        <button onClick={() => setActiveTab('PRODUCTS')} className="text-sm text-nintendo-red font-bold hover:underline">
+                            Quản lý & Nhập thêm hàng tại trang Sản phẩm
+                        </button>
+                   </div>
+               </div>
           </div>
       </div>
-  );
+  )};
 
   const renderCategories = () => {
       if (isEditingCategory && editingCategory) {
@@ -426,7 +627,7 @@ const AdminDashboard: React.FC = () => {
                         <input required type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-white text-gray-900 focus:ring-2 focus:ring-nintendo-red focus:outline-none" value={editingProduct.title} onChange={e => setEditingProduct({...editingProduct, title: e.target.value})} />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-1">Giá (VND)</label>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">Giá bán lẻ (VND)</label>
                         <input required type="number" className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-white text-gray-900 focus:ring-2 focus:ring-nintendo-red focus:outline-none" value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: Number(e.target.value)})} />
                     </div>
                     <div>
@@ -503,8 +704,9 @@ const AdminDashboard: React.FC = () => {
                         <input type="text" placeholder="https://www.youtube.com/embed/..." className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-white text-gray-900 focus:ring-2 focus:ring-nintendo-red focus:outline-none" value={editingProduct.videoUrl || ''} onChange={e => setEditingProduct({...editingProduct, videoUrl: e.target.value})} />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-1">Tồn kho</label>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">Tồn kho hiện tại</label>
                         <input required type="number" className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-white text-gray-900 focus:ring-2 focus:ring-nintendo-red focus:outline-none" value={editingProduct.stock} onChange={e => setEditingProduct({...editingProduct, stock: Number(e.target.value)})} />
+                        <p className="text-xs text-gray-500 mt-1">Mẹo: Sử dụng tính năng "Nhập hàng" bên ngoài danh sách để ghi lại lịch sử nhập kho.</p>
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-gray-700 mb-1">Ngày phát hành</label>
@@ -536,7 +738,7 @@ const AdminDashboard: React.FC = () => {
                         <thead className="bg-gray-50 border-b border-gray-100">
                             <tr>
                                 <th className="px-6 py-4 font-bold text-gray-700">Sản phẩm</th>
-                                <th className="px-6 py-4 font-bold text-gray-700">Giá</th>
+                                <th className="px-6 py-4 font-bold text-gray-700">Giá bán</th>
                                 <th className="px-6 py-4 font-bold text-gray-700">Kho</th>
                                 <th className="px-6 py-4 font-bold text-gray-700">Danh mục</th>
                                 <th className="px-6 py-4 font-bold text-gray-700">Hành động</th>
@@ -568,8 +770,15 @@ const AdminDashboard: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex gap-2">
-                                            <button onClick={() => { setEditingProduct(p); setIsEditingProduct(true); }} className="text-blue-600 hover:text-blue-800 font-bold text-xs">Sửa</button>
-                                            <button onClick={() => confirmDeleteProduct(p.id, p.title)} className="text-red-600 hover:text-red-800 font-bold text-xs">Xóa</button>
+                                            <button 
+                                                onClick={() => openImportModal(p)} 
+                                                className="bg-green-50 text-green-600 p-1.5 rounded hover:bg-green-100 transition-colors"
+                                                title="Nhập hàng"
+                                            >
+                                                <span className="material-icons-round text-lg">inventory_2</span>
+                                            </button>
+                                            <button onClick={() => { setEditingProduct(p); setIsEditingProduct(true); }} className="text-blue-600 hover:text-blue-800 font-bold text-xs p-2">Sửa</button>
+                                            <button onClick={() => confirmDeleteProduct(p.id, p.title)} className="text-red-600 hover:text-red-800 font-bold text-xs p-2">Xóa</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -677,296 +886,354 @@ const AdminDashboard: React.FC = () => {
       </div>
   );
 
-  const renderContent = () => {
-    if (!siteConfig.authConfig) return null;
+  // --- SUB-RENDERERS FOR CONTENT TAB ---
 
-    return (
-      <div className="space-y-8 animate-fade-in-up">
-          {/* Site Config Section */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                   <span className="material-icons-round text-blue-600">settings</span>
-                   Cấu hình Liên hệ & Mạng xã hội
-               </h3>
-               <div className="grid md:grid-cols-2 gap-6">
-                   <div>
-                       <label className="block text-xs font-bold text-gray-500 mb-1">Facebook Messenger Link (URL)</label>
-                       <input 
-                           type="text" 
-                           className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
-                           placeholder="https://m.me/..."
-                           value={siteConfig.facebookUrl} 
-                           onChange={(e) => setSiteConfig({...siteConfig, facebookUrl: e.target.value})} 
-                        />
-                       <p className="text-xs text-gray-400 mt-1">Dán link m.me của Fanpage để khách hàng chat trực tiếp.</p>
-                   </div>
-                   <div className="flex items-end">
-                       <button onClick={handleSaveConfig} className="bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded hover:bg-blue-700 transition-colors">
-                           Lưu Cấu Hình
-                       </button>
-                   </div>
-               </div>
-          </div>
-
-          <div className="border-t border-gray-200 my-4"></div>
-
-          {/* Footer Configuration */}
-          {siteConfig.footerConfig && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                   <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                        <span className="material-icons-round text-gray-600">view_column</span>
-                       Cấu hình Footer (Chân trang)
-                   </h3>
-                   
-                   <div className="space-y-6">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1">Mô tả chung (Cột 1)</label>
-                            <textarea 
-                                rows={2}
-                                className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
-                                value={siteConfig.footerConfig.description}
-                                onChange={(e) => setSiteConfig({
-                                    ...siteConfig,
-                                    footerConfig: { ...siteConfig.footerConfig!, description: e.target.value }
-                                })}
-                            />
-                        </div>
-
-                        <div className="grid md:grid-cols-2 gap-6">
-                            {siteConfig.footerConfig.sections.map((section, sIdx) => (
-                                <div key={sIdx} className="border border-gray-200 p-4 rounded-xl bg-gray-50">
-                                    <div className="mb-3">
-                                        <label className="block text-xs font-bold text-gray-500 mb-1">Tiêu đề Cột {sIdx + 1}</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 font-bold focus:outline-none focus:border-nintendo-red"
-                                            value={section.title}
-                                            onChange={(e) => {
-                                                const newSections = [...siteConfig.footerConfig!.sections];
-                                                newSections[sIdx].title = e.target.value;
-                                                setSiteConfig({ ...siteConfig, footerConfig: { ...siteConfig.footerConfig!, sections: newSections } });
-                                            }}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="block text-xs font-bold text-gray-500">Các liên kết</label>
-                                        {section.links.map((link, lIdx) => (
-                                            <div key={lIdx} className="flex gap-2">
-                                                <input 
-                                                    type="text" 
-                                                    className="w-1/2 border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red"
-                                                    placeholder="Tên link"
-                                                    value={link.label}
-                                                    onChange={(e) => handleFooterLinkChange(sIdx, lIdx, 'label', e.target.value)}
-                                                />
-                                                <input 
-                                                    type="text" 
-                                                    className="w-1/2 border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red"
-                                                    placeholder="URL (#)"
-                                                    value={link.url}
-                                                    onChange={(e) => handleFooterLinkChange(sIdx, lIdx, 'url', e.target.value)}
-                                                />
-                                                <button onClick={() => removeFooterLink(sIdx, lIdx)} className="text-red-500 hover:text-red-700">
-                                                    <span className="material-icons-round text-base">close</span>
-                                                </button>
-                                            </div>
-                                        ))}
-                                        <button onClick={() => addFooterLink(sIdx)} className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1 mt-2">
-                                            <span className="material-icons-round text-sm">add</span> Thêm liên kết
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1">Bản quyền (Copyright)</label>
-                            <input 
-                                type="text"
-                                className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
-                                value={siteConfig.footerConfig.copyright}
-                                onChange={(e) => setSiteConfig({
-                                    ...siteConfig,
-                                    footerConfig: { ...siteConfig.footerConfig!, copyright: e.target.value }
-                                })}
-                            />
-                        </div>
-
-                        <div className="text-right">
-                             <button onClick={handleSaveConfig} className="bg-gray-900 text-white text-sm font-bold px-4 py-2 rounded hover:bg-black transition-colors">
-                                Lưu Cấu Hình Footer
-                            </button>
-                        </div>
-                   </div>
-              </div>
-          )}
-
-          <div className="border-t border-gray-200 my-4"></div>
-
-          {/* Auth Pages Config Section */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                    <span className="material-icons-round text-gray-600">lock_person</span>
-                   Cấu hình Trang Xác Thực (Đăng nhập / Đăng ký)
-               </h3>
-               <div className="grid md:grid-cols-2 gap-8">
-                   {/* Login Page Config */}
-                   <div className="space-y-4 border p-4 rounded-xl border-gray-100">
-                       <h4 className="font-bold text-nintendo-red text-sm uppercase">Trang Đăng Nhập</h4>
-                       
-                       <div className="relative w-full h-32 bg-gray-100 rounded-lg overflow-hidden group">
-                           <img src={siteConfig.authConfig.login.image} alt="Login Banner" className="w-full h-full object-cover opacity-80" />
-                           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <label className="cursor-pointer bg-white text-gray-900 px-3 py-1 rounded-full text-xs font-bold shadow hover:bg-gray-100">
-                                    Đổi ảnh
-                                    <input type="file" className="hidden" accept="image/*" onChange={(e) => handleAuthImageUpload(e, 'login')} />
+  const renderContentHero = () => (
+     <div className="animate-fade-in-up">
+        <div className="bg-blue-50 p-4 rounded-xl text-blue-800 text-sm border border-blue-100 mb-6 flex items-center gap-2">
+            <span className="material-icons-round text-base">info</span>
+            Quản lý các Banner quảng cáo xuất hiện ở vị trí trang trọng nhất (Top Page).
+        </div>
+        <div className="grid gap-8">
+            {slides.map(slide => (
+                <div key={slide.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-8">
+                    {/* Preview Section */}
+                    <div className="w-full md:w-1/3 bg-gray-900 rounded-2xl p-6 flex items-center justify-center relative group overflow-hidden">
+                        <img src={slide.image} alt="" className="h-40 object-contain z-10 relative" />
+                        <div className={`absolute inset-0 bg-gradient-to-br ${slide.bgGradient} opacity-20`}></div>
+                        
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-60 z-20">
+                                <label className="cursor-pointer bg-white text-gray-900 px-4 py-2 rounded-full text-xs font-bold shadow hover:bg-gray-100 flex items-center gap-2 transition-transform hover:scale-105">
+                                    <span className="material-icons-round text-sm">cloud_upload</span>
+                                    Thay ảnh mới
+                                    <input type="file" className="hidden" accept="image/*" onChange={(e) => handleSlideImageUpload(e, slide.id)} />
                                 </label>
-                           </div>
-                       </div>
+                        </div>
+                    </div>
 
-                       <div>
-                           <label className="block text-xs font-bold text-gray-500 mb-1">Tiêu đề (Title)</label>
-                           <input type="text" className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
-                                value={siteConfig.authConfig.login.title}
-                                onChange={(e) => setSiteConfig({
-                                    ...siteConfig,
-                                    authConfig: { ...siteConfig.authConfig!, login: { ...siteConfig.authConfig!.login, title: e.target.value } }
-                                })}
-                           />
-                       </div>
-                       <div>
-                           <label className="block text-xs font-bold text-gray-500 mb-1">Mô tả (Subtitle)</label>
-                           <textarea rows={2} className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
-                                value={siteConfig.authConfig.login.subtitle}
-                                onChange={(e) => setSiteConfig({
-                                    ...siteConfig,
-                                    authConfig: { ...siteConfig.authConfig!, login: { ...siteConfig.authConfig!.login, subtitle: e.target.value } }
-                                })}
-                           />
-                       </div>
-                   </div>
-
-                   {/* Register Page Config */}
-                   <div className="space-y-4 border p-4 rounded-xl border-gray-100">
-                       <h4 className="font-bold text-nintendo-red text-sm uppercase">Trang Đăng Ký</h4>
-                       
-                       <div className="relative w-full h-32 bg-gray-100 rounded-lg overflow-hidden group">
-                           <img src={siteConfig.authConfig.register.image} alt="Register Banner" className="w-full h-full object-cover opacity-80" />
-                           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <label className="cursor-pointer bg-white text-gray-900 px-3 py-1 rounded-full text-xs font-bold shadow hover:bg-gray-100">
-                                    Đổi ảnh
-                                    <input type="file" className="hidden" accept="image/*" onChange={(e) => handleAuthImageUpload(e, 'register')} />
-                                </label>
-                           </div>
-                       </div>
-
-                       <div>
-                           <label className="block text-xs font-bold text-gray-500 mb-1">Tiêu đề (Title)</label>
-                           <input type="text" className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
-                                value={siteConfig.authConfig.register.title}
-                                onChange={(e) => setSiteConfig({
-                                    ...siteConfig,
-                                    authConfig: { ...siteConfig.authConfig!, register: { ...siteConfig.authConfig!.register, title: e.target.value } }
-                                })}
-                           />
-                       </div>
-                       <div>
-                           <label className="block text-xs font-bold text-gray-500 mb-1">Mô tả (Subtitle)</label>
-                           <textarea rows={2} className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
-                                value={siteConfig.authConfig.register.subtitle}
-                                onChange={(e) => setSiteConfig({
-                                    ...siteConfig,
-                                    authConfig: { ...siteConfig.authConfig!, register: { ...siteConfig.authConfig!.register, subtitle: e.target.value } }
-                                })}
-                           />
-                       </div>
-                   </div>
-
-                   {/* Forgot Password Config */}
-                   <div className="space-y-4 border p-4 rounded-xl border-gray-100 md:col-span-2">
-                       <h4 className="font-bold text-nintendo-red text-sm uppercase">Trang Quên Mật Khẩu</h4>
-                       <div className="grid md:grid-cols-2 gap-4">
+                    {/* Editor Section */}
+                    <div className="w-full md:w-2/3 space-y-5">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                            <h4 className="font-black text-gray-400 uppercase text-xs tracking-widest">Banner #{slide.id}</h4>
+                        </div>
+                        <div className="grid gap-5">
                             <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Tiêu đề (Title)</label>
-                                <input type="text" className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
-                                        value={siteConfig.authConfig.forgotPassword.title}
-                                        onChange={(e) => setSiteConfig({
-                                            ...siteConfig,
-                                            authConfig: { ...siteConfig.authConfig!, forgotPassword: { ...siteConfig.authConfig!.forgotPassword, title: e.target.value } }
-                                        })}
-                                />
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Tiêu đề lớn (Headline)</label>
+                                <input type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm font-bold bg-white text-gray-900 focus:outline-none focus:border-nintendo-red focus:ring-1 focus:ring-nintendo-red" value={slide.title} onChange={(e) => {
+                                    const newSlides = [...slides];
+                                    const idx = newSlides.findIndex(s => s.id === slide.id);
+                                    newSlides[idx].title = e.target.value;
+                                    setSlides(newSlides);
+                                }} />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Mô tả (Subtitle)</label>
-                                <input type="text" className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
-                                        value={siteConfig.authConfig.forgotPassword.subtitle}
-                                        onChange={(e) => setSiteConfig({
-                                            ...siteConfig,
-                                            authConfig: { ...siteConfig.authConfig!, forgotPassword: { ...siteConfig.authConfig!.forgotPassword, subtitle: e.target.value } }
-                                        })}
-                                />
-                            </div>
-                       </div>
-                   </div>
-
-                   <div className="md:col-span-2">
-                       <button onClick={handleSaveConfig} className="bg-gray-900 text-white text-sm font-bold px-4 py-2 rounded hover:bg-black transition-colors">
-                           Lưu Cấu Hình
-                       </button>
-                   </div>
-               </div>
-          </div>
-
-
-          <div className="border-t border-gray-200 my-4"></div>
-
-          {/* Banner Slides Section */}
-          <div>
-            <div className="bg-blue-50 p-4 rounded-xl text-blue-800 text-sm border border-blue-100 mb-6">
-                Tại đây bạn có thể chỉnh sửa các Banner quảng cáo xuất hiện trên trang chủ.
-            </div>
-            <div className="grid gap-6">
-                {slides.map(slide => (
-                    <div key={slide.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6">
-                        <div className="w-full md:w-1/3 bg-gray-900 rounded-lg p-4 flex items-center justify-center relative group">
-                            <img src={slide.image} alt="" className="h-32 object-contain" />
-                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 rounded-lg">
-                                    <label className="cursor-pointer bg-white text-gray-900 px-3 py-1 rounded-full text-xs font-bold shadow hover:bg-gray-100">
-                                        Thay ảnh
-                                        <input type="file" className="hidden" accept="image/*" onChange={(e) => handleSlideImageUpload(e, slide.id)} />
-                                    </label>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Mô tả ngắn (Subtitle)</label>
+                                <textarea rows={2} className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red focus:ring-1 focus:ring-nintendo-red" value={slide.subtitle} onChange={(e) => {
+                                    const newSlides = [...slides];
+                                    const idx = newSlides.findIndex(s => s.id === slide.id);
+                                    newSlides[idx].subtitle = e.target.value;
+                                    setSlides(newSlides);
+                                }} />
                             </div>
                         </div>
-                        <div className="w-full md:w-2/3 space-y-4">
-                            <h4 className="font-bold text-gray-500 uppercase text-xs">Slide #{slide.id}</h4>
-                            <div className="grid md:grid-cols-2 gap-4">
-                                <div className="col-span-2">
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Tiêu đề lớn</label>
-                                    <input type="text" className="w-full border border-gray-300 rounded px-3 py-2 text-sm font-bold bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" value={slide.title} onChange={(e) => {
-                                        const newSlides = [...slides];
-                                        const idx = newSlides.findIndex(s => s.id === slide.id);
-                                        newSlides[idx].title = e.target.value;
-                                        setSlides(newSlides);
-                                    }} />
-                                </div>
-                                <div className="col-span-2">
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Mô tả ngắn</label>
-                                    <input type="text" className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" value={slide.subtitle} onChange={(e) => {
-                                        const newSlides = [...slides];
-                                        const idx = newSlides.findIndex(s => s.id === slide.id);
-                                        newSlides[idx].subtitle = e.target.value;
-                                        setSlides(newSlides);
-                                    }} />
-                                </div>
-                            </div>
-                            <button onClick={() => handleUpdateSlide(slide)} className="bg-gray-900 text-white text-xs font-bold px-4 py-2 rounded hover:bg-black">
-                                Lưu Thay Đổi
+                        <div className="pt-2">
+                            <button onClick={() => handleUpdateSlide(slide)} className="bg-gray-900 text-white text-xs font-bold px-5 py-2.5 rounded-lg hover:bg-black transition-colors shadow-lg shadow-gray-200">
+                                Lưu Banner #{slide.id}
                             </button>
                         </div>
                     </div>
-                ))}
-            </div>
+                </div>
+            ))}
+        </div>
+      </div>
+  );
+
+  const renderContentAuth = () => {
+      if (!siteConfig.authConfig) return <div>Đang tải cấu hình...</div>;
+      
+      const currentConfig = siteConfig.authConfig[activeAuthPage];
+
+      return (
+          <div className="animate-fade-in-up">
+              {/* Auth Page Selector Plls */}
+              <div className="flex flex-wrap gap-2 mb-8">
+                  <button 
+                    onClick={() => setActiveAuthPage('login')}
+                    className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${activeAuthPage === 'login' ? 'bg-nintendo-red text-white shadow-md' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                      Trang Đăng Nhập
+                  </button>
+                  <button 
+                    onClick={() => setActiveAuthPage('register')}
+                    className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${activeAuthPage === 'register' ? 'bg-nintendo-red text-white shadow-md' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                      Trang Đăng Ký
+                  </button>
+                  <button 
+                    onClick={() => setActiveAuthPage('forgotPassword')}
+                    className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${activeAuthPage === 'forgotPassword' ? 'bg-nintendo-red text-white shadow-md' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                      Trang Quên MK
+                  </button>
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-8">
+                  {/* Editor */}
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit">
+                      <h3 className="font-bold text-gray-900 mb-6 border-b pb-4">Chỉnh sửa nội dung</h3>
+                      <div className="space-y-6">
+                           <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-2">Tiêu đề (Title)</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white text-gray-900 font-bold focus:outline-none focus:border-nintendo-red"
+                                    value={currentConfig.title}
+                                    onChange={(e) => setSiteConfig({
+                                        ...siteConfig,
+                                        authConfig: {
+                                            ...siteConfig.authConfig!,
+                                            [activeAuthPage]: { ...currentConfig, title: e.target.value }
+                                        }
+                                    })}
+                                />
+                           </div>
+                           <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-2">Mô tả (Subtitle)</label>
+                                <textarea 
+                                    rows={4}
+                                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red"
+                                    value={currentConfig.subtitle}
+                                    onChange={(e) => setSiteConfig({
+                                        ...siteConfig,
+                                        authConfig: {
+                                            ...siteConfig.authConfig!,
+                                            [activeAuthPage]: { ...currentConfig, subtitle: e.target.value }
+                                        }
+                                    })}
+                                />
+                           </div>
+                           
+                           {/* Image Upload for Auth */}
+                           <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-2">Hình ảnh minh họa (Bên trái/Nền)</label>
+                                <div className="flex items-center gap-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+                                    <div className="w-16 h-16 bg-gray-200 rounded overflow-hidden flex-shrink-0">
+                                        {currentConfig.image ? (
+                                            <img src={currentConfig.image} className="w-full h-full object-cover" alt="Preview" />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">No Img</div>
+                                        )}
+                                    </div>
+                                    <div className="flex-1">
+                                         <input 
+                                            type="file" 
+                                            id="auth-img-upload"
+                                            className="hidden"
+                                            accept="image/*"
+                                            onChange={(e) => handleAuthImageUpload(e, activeAuthPage)}
+                                        />
+                                        <label htmlFor="auth-img-upload" className="cursor-pointer inline-block bg-white border border-gray-300 px-3 py-1.5 rounded text-xs font-bold text-gray-700 hover:bg-gray-100 transition-colors">
+                                            Chọn ảnh khác
+                                        </label>
+                                        <p className="text-xs text-gray-400 mt-1">Khuyên dùng ảnh dọc hoặc vuông chất lượng cao.</p>
+                                    </div>
+                                </div>
+                           </div>
+
+                           <div className="pt-4">
+                                <button onClick={handleSaveConfig} className="w-full bg-gray-900 text-white font-bold py-3 rounded-xl hover:bg-black transition-colors">
+                                    Lưu Cấu Hình Trang {activeAuthPage === 'login' ? 'Đăng Nhập' : activeAuthPage === 'register' ? 'Đăng Ký' : 'Quên MK'}
+                                </button>
+                           </div>
+                      </div>
+                  </div>
+
+                  {/* Live Preview (Mockup) */}
+                  <div className="hidden lg:block">
+                       <h3 className="font-bold text-gray-900 mb-6 text-center">Xem trước giao diện</h3>
+                       <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden flex h-[500px] max-w-2xl mx-auto">
+                            <div className="w-1/2 bg-gray-900 relative overflow-hidden">
+                                {currentConfig.image && (
+                                    <img src={currentConfig.image} className="w-full h-full object-cover opacity-60" alt="" />
+                                )}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/40 p-6 flex flex-col justify-end">
+                                     <h4 className="text-white font-bold text-xl mb-2">{currentConfig.title}</h4>
+                                     <p className="text-gray-300 text-xs line-clamp-3">{currentConfig.subtitle}</p>
+                                </div>
+                            </div>
+                            <div className="w-1/2 bg-white p-6 flex flex-col justify-center items-center">
+                                <div className="w-full space-y-3">
+                                    <div className="h-6 bg-gray-100 rounded w-3/4 mb-4"></div>
+                                    <div className="h-10 bg-gray-50 border border-gray-200 rounded-lg w-full"></div>
+                                    <div className="h-10 bg-gray-50 border border-gray-200 rounded-lg w-full"></div>
+                                    <div className="h-10 bg-nintendo-red rounded-lg w-full opacity-50 mt-4"></div>
+                                </div>
+                            </div>
+                       </div>
+                  </div>
+              </div>
           </div>
+      )
+  };
+
+  const renderContentFooter = () => {
+    if (!siteConfig.footerConfig) return null;
+
+    return (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 animate-fade-in-up">
+            <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <span className="material-icons-round text-gray-600">view_column</span>
+                Cấu hình Footer (Chân trang)
+            </h3>
+            
+            <div className="space-y-6">
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1">Mô tả chung (Cột 1)</label>
+                    <textarea 
+                        rows={2}
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
+                        value={siteConfig.footerConfig.description}
+                        onChange={(e) => setSiteConfig({
+                            ...siteConfig,
+                            footerConfig: { ...siteConfig.footerConfig!, description: e.target.value }
+                        })}
+                    />
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                    {siteConfig.footerConfig.sections.map((section, sIdx) => (
+                        <div key={sIdx} className="border border-gray-200 p-4 rounded-xl bg-gray-50">
+                            <div className="mb-3">
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Tiêu đề Cột {sIdx + 1}</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 font-bold focus:outline-none focus:border-nintendo-red"
+                                    value={section.title}
+                                    onChange={(e) => {
+                                        const newSections = [...siteConfig.footerConfig!.sections];
+                                        newSections[sIdx].title = e.target.value;
+                                        setSiteConfig({ ...siteConfig, footerConfig: { ...siteConfig.footerConfig!, sections: newSections } });
+                                    }}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-xs font-bold text-gray-500">Các liên kết</label>
+                                {section.links.map((link, lIdx) => (
+                                    <div key={lIdx} className="flex gap-2">
+                                        <input 
+                                            type="text" 
+                                            className="w-1/2 border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red"
+                                            placeholder="Tên link"
+                                            value={link.label}
+                                            onChange={(e) => handleFooterLinkChange(sIdx, lIdx, 'label', e.target.value)}
+                                        />
+                                        <input 
+                                            type="text" 
+                                            className="w-1/2 border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red"
+                                            placeholder="URL (#)"
+                                            value={link.url}
+                                            onChange={(e) => handleFooterLinkChange(sIdx, lIdx, 'url', e.target.value)}
+                                        />
+                                        <button onClick={() => removeFooterLink(sIdx, lIdx)} className="text-red-500 hover:text-red-700">
+                                            <span className="material-icons-round text-base">close</span>
+                                        </button>
+                                    </div>
+                                ))}
+                                <button onClick={() => addFooterLink(sIdx)} className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1 mt-2">
+                                    <span className="material-icons-round text-sm">add</span> Thêm liên kết
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1">Bản quyền (Copyright)</label>
+                    <input 
+                        type="text"
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
+                        value={siteConfig.footerConfig.copyright}
+                        onChange={(e) => setSiteConfig({
+                            ...siteConfig,
+                            footerConfig: { ...siteConfig.footerConfig!, copyright: e.target.value }
+                        })}
+                    />
+                </div>
+
+                <div className="text-right pt-4 border-t border-gray-100">
+                        <button onClick={handleSaveConfig} className="bg-gray-900 text-white text-sm font-bold px-6 py-3 rounded-xl hover:bg-black transition-colors shadow-lg">
+                        Lưu Cấu Hình Footer
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+  }
+
+  const renderContentGeneral = () => (
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 animate-fade-in-up">
+            <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <span className="material-icons-round text-blue-600">settings</span>
+                Cấu hình Liên hệ & Mạng xã hội
+            </h3>
+            <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1">Facebook Messenger Link (URL)</label>
+                    <input 
+                        type="text" 
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white text-gray-900 focus:outline-none focus:border-nintendo-red" 
+                        placeholder="https://m.me/..."
+                        value={siteConfig.facebookUrl} 
+                        onChange={(e) => setSiteConfig({...siteConfig, facebookUrl: e.target.value})} 
+                    />
+                    <p className="text-xs text-gray-400 mt-2">Dán link m.me của Fanpage để khách hàng chat trực tiếp.</p>
+                </div>
+                <div className="flex items-end">
+                    <button onClick={handleSaveConfig} className="bg-blue-600 text-white text-sm font-bold px-6 py-2.5 rounded-lg hover:bg-blue-700 transition-colors shadow-md">
+                        Lưu Cấu Hình
+                    </button>
+                </div>
+            </div>
+        </div>
+  );
+
+  const renderContent = () => {
+    return (
+      <div className="space-y-8 animate-fade-in-up">
+         {/* Sub-Navigation for Content Management */}
+         <div className="flex border-b border-gray-200 overflow-x-auto">
+             <button 
+                onClick={() => setContentSubTab('HERO')}
+                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${contentSubTab === 'HERO' ? 'border-nintendo-red text-nintendo-red' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+             >
+                 Banner Trang Chủ
+             </button>
+             <button 
+                onClick={() => setContentSubTab('AUTH')}
+                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${contentSubTab === 'AUTH' ? 'border-nintendo-red text-nintendo-red' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+             >
+                 Trang Xác Thực (Auth)
+             </button>
+             <button 
+                onClick={() => setContentSubTab('FOOTER')}
+                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${contentSubTab === 'FOOTER' ? 'border-nintendo-red text-nintendo-red' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+             >
+                 Chân Trang (Footer)
+             </button>
+             <button 
+                onClick={() => setContentSubTab('GENERAL')}
+                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${contentSubTab === 'GENERAL' ? 'border-nintendo-red text-nintendo-red' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+             >
+                 Cấu Hình Chung
+             </button>
+         </div>
+
+         <div className="py-4">
+             {contentSubTab === 'HERO' && renderContentHero()}
+             {contentSubTab === 'AUTH' && renderContentAuth()}
+             {contentSubTab === 'FOOTER' && renderContentFooter()}
+             {contentSubTab === 'GENERAL' && renderContentGeneral()}
+         </div>
       </div>
     );
   };
@@ -1018,7 +1285,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'CATEGORIES' && 'Quản Lý Danh Mục'}
                         {activeTab === 'ORDERS' && 'Quản Lý Đơn Hàng'}
                         {activeTab === 'CUSTOMERS' && 'Danh Sách Khách Hàng'}
-                        {activeTab === 'CONTENT' && 'Cấu Hình Trang Chủ'}
+                        {activeTab === 'CONTENT' && 'Quản Lý Giao Diện Web'}
                     </h2>
                     <p className="text-gray-500 text-sm mt-1">Xin chào Admin, chúc bạn một ngày làm việc hiệu quả.</p>
                   </div>
@@ -1037,6 +1304,76 @@ const AdminDashboard: React.FC = () => {
               {activeTab === 'CONTENT' && renderContent()}
           </div>
       </div>
+
+      {/* Import Stock Modal */}
+      {isImportingStock && importTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
+                <div className="flex items-center gap-3 text-green-600 mb-4">
+                    <span className="material-icons-round text-3xl">inventory</span>
+                    <h3 className="text-xl font-bold">Nhập Hàng Vào Kho</h3>
+                </div>
+                
+                <div className="mb-4">
+                    <p className="text-sm text-gray-500">Sản phẩm:</p>
+                    <p className="font-bold text-gray-900 text-lg">{importTarget.title}</p>
+                    <p className="text-sm text-gray-500 mt-1">Tồn kho hiện tại: <span className="font-bold text-black">{importTarget.stock}</span></p>
+                </div>
+
+                <form onSubmit={handleImportStock} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">Số lượng nhập</label>
+                        <input 
+                            required 
+                            type="number" 
+                            min="1"
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500" 
+                            value={importQty} 
+                            onChange={(e) => setImportQty(Number(e.target.value))} 
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">Giá vốn / Đơn vị (VND)</label>
+                        <input 
+                            required 
+                            type="number" 
+                            min="0"
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500" 
+                            value={importCost} 
+                            onChange={(e) => setImportCost(Number(e.target.value))} 
+                        />
+                         <p className="text-xs text-gray-400 mt-1">Tổng giá trị nhập: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(importQty * importCost)}</p>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">Ghi chú (Tùy chọn)</label>
+                        <input 
+                            type="text" 
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500" 
+                            placeholder="VD: Nhập lô hàng tháng 10..."
+                            value={importNote} 
+                            onChange={(e) => setImportNote(e.target.value)} 
+                        />
+                    </div>
+
+                    <div className="flex gap-3 justify-end mt-6">
+                        <button 
+                            type="button"
+                            onClick={() => { setIsImportingStock(false); setImportTarget(null); }}
+                            className="px-5 py-2 rounded-lg font-bold text-gray-600 hover:bg-gray-100 transition-colors"
+                        >
+                            Hủy bỏ
+                        </button>
+                        <button 
+                            type="submit"
+                            className="px-5 py-2 rounded-lg font-bold bg-green-600 text-white hover:bg-green-700 transition-colors shadow-lg"
+                        >
+                            Xác nhận nhập
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      )}
 
       {/* Custom Delete Confirmation Modal */}
       {showDeleteModal && (

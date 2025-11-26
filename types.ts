@@ -1,4 +1,5 @@
 
+
 // Enums - Deprecated for Category, keeping for Order/Payment status
 export enum PaymentStatus {
   PENDING = 'PENDING',
@@ -86,6 +87,17 @@ export interface HeroSlide {
   bgGradient: string; // e.g., "from-red-600 to-orange-500"
   accentColor: string; // e.g., "bg-red-600"
   theme: 'dark' | 'light';
+}
+
+// Inventory Management
+export interface StockImport {
+    id: string;
+    productId: string;
+    quantity: number;
+    importPrice: number; // Cost per unit
+    totalCost: number;
+    timestamp: string;
+    note?: string;
 }
 
 // Auth Page Configuration

@@ -1,5 +1,6 @@
 
-import { Product, Order, OrderStatus, PaymentStatus, CartItem, User, HeroSlide, SiteConfig, Category } from '../types';
+
+import { Product, Order, OrderStatus, PaymentStatus, CartItem, User, HeroSlide, SiteConfig, Category, StockImport } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CATEGORIES } from './data';
 
 const PRODUCTS_KEY = 'nintenstore_products';
@@ -8,6 +9,7 @@ const USERS_KEY = 'nintenstore_users_db';
 const SLIDES_KEY = 'nintenstore_hero_slides';
 const CONFIG_KEY = 'nintenstore_site_config';
 const CATEGORIES_KEY = 'nintenstore_categories';
+const IMPORTS_KEY = 'nintenstore_stock_imports';
 
 // Initialize DB
 if (!localStorage.getItem(PRODUCTS_KEY)) {
@@ -21,6 +23,9 @@ if (!localStorage.getItem(SLIDES_KEY)) {
 }
 if (!localStorage.getItem(CATEGORIES_KEY)) {
   localStorage.setItem(CATEGORIES_KEY, JSON.stringify(INITIAL_CATEGORIES));
+}
+if (!localStorage.getItem(IMPORTS_KEY)) {
+  localStorage.setItem(IMPORTS_KEY, JSON.stringify([]));
 }
 if (!localStorage.getItem(USERS_KEY)) {
     // Seed an admin
@@ -75,6 +80,42 @@ export const StorageService = {
       products = products.filter(p => p.id !== id);
       localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
       notifyChange();
+  },
+
+  // STOCK IMPORT
+  importProduct: (productId: string, quantity: number, importPrice: number, note?: string): void => {
+      // 1. Update Product Stock
+      const products = StorageService.getProducts();
+      const productIndex = products.findIndex(p => p.id === productId);
+      
+      if (productIndex >= 0) {
+          products[productIndex].stock += quantity;
+          localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+      }
+
+      // 2. Create Import Record
+      const importsData = localStorage.getItem(IMPORTS_KEY);
+      const imports: StockImport[] = importsData ? JSON.parse(importsData) : [];
+      
+      const newImport: StockImport = {
+          id: `IMP-${Date.now()}`,
+          productId,
+          quantity,
+          importPrice,
+          totalCost: quantity * importPrice,
+          timestamp: new Date().toISOString(),
+          note
+      };
+      
+      imports.unshift(newImport); // Add to top
+      localStorage.setItem(IMPORTS_KEY, JSON.stringify(imports));
+      
+      notifyChange();
+  },
+
+  getStockImports: (): StockImport[] => {
+      const data = localStorage.getItem(IMPORTS_KEY);
+      return data ? JSON.parse(data) : [];
   },
 
   // CATEGORIES
