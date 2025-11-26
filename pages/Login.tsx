@@ -26,11 +26,22 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const from = location.state?.from?.pathname || '/';
 
   useEffect(() => {
+      // 1. Check if already logged in -> Redirect immediately
+      const currentUser = AuthService.getCurrentUser();
+      if (currentUser) {
+          if (currentUser.role === 'ADMIN') {
+              navigate('/admin');
+          } else {
+              navigate('/');
+          }
+      }
+
+      // 2. Load Config
       const config = StorageService.getSiteConfig();
       if (config.authConfig?.login) {
           setPageConfig(config.authConfig.login);
       }
-  }, []);
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

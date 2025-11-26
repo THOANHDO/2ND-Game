@@ -34,7 +34,8 @@ if (!localStorage.getItem(USERS_KEY)) {
         email: 'admin@ninten.com',
         role: 'ADMIN',
         createdAt: new Date().toISOString(),
-        avatar: 'https://ui-avatars.com/api/?name=Admin&background=000&color=fff'
+        avatar: 'https://ui-avatars.com/api/?name=Admin&background=000&color=fff',
+        addresses: []
     };
     localStorage.setItem(USERS_KEY, JSON.stringify([adminUser]));
 }

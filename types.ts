@@ -30,6 +30,16 @@ export interface Category {
   description?: string;
 }
 
+export interface Address {
+    id: string;
+    label: string; // "Nhà riêng", "Công ty", etc.
+    recipientName: string;
+    phoneNumber: string;
+    city: string;
+    addressLine: string; // Số nhà, tên đường, phường xã
+    isDefault: boolean;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -39,6 +49,7 @@ export interface User {
   avatar?: string;
   dob?: string;        
   city?: string;
+  addresses?: Address[]; // New: List of saved addresses
   createdAt?: string;
 }
 

@@ -1,9 +1,26 @@
 
 import React, { useState, useEffect } from 'react';
-import { CartItem, PaymentMethod, PaymentStatus, BankConfig } from '../types';
+import { CartItem, PaymentMethod, PaymentStatus, BankConfig, User, Address } from '../types';
 import { StorageService } from '../services/storage';
+import { AuthService } from '../services/auth';
 import { PaymentService } from '../services/payment';
 import { useNavigate } from 'react-router-dom';
+
+const VN_CITIES = [
+    "Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Hải Phòng", "Cần Thơ", 
+    "An Giang", "Bà Rịa - Vũng Tàu", "Bắc Giang", "Bắc Kạn", "Bạc Liêu",
+    "Bắc Ninh", "Bến Tre", "Bình Định", "Bình Dương", "Bình Phước",
+    "Bình Thuận", "Cà Mau", "Cao Bằng", "Đắk Lắk", "Đắk Nông",
+    "Điện Biên", "Đồng Nai", "Đồng Tháp", "Gia Lai", "Hà Giang",
+    "Hà Nam", "Hà Tĩnh", "Hải Dương", "Hậu Giang", "Hòa Bình",
+    "Hưng Yên", "Khánh Hòa", "Kiên Giang", "Kon Tum", "Lai Châu",
+    "Lâm Đồng", "Lạng Sơn", "Lào Cai", "Long An", "Nam Định",
+    "Nghệ An", "Ninh Bình", "Ninh Thuận", "Phú Thọ", "Quảng Bình",
+    "Quảng Nam", "Quảng Ngãi", "Quảng Ninh", "Quảng Trị", "Sóc Trăng",
+    "Sơn La", "Tây Ninh", "Thái Bình", "Thái Nguyên", "Thanh Hóa",
+    "Thừa Thiên Huế", "Tiền Giang", "Trà Vinh", "Tuyên Quang", "Vĩnh Long",
+    "Vĩnh Phúc", "Yên Bái"
+];
 
 interface CheckoutProps {
   cart: CartItem[];
@@ -13,12 +30,20 @@ interface CheckoutProps {
 
 const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
   const navigate = useNavigate();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
+  // Form State
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    address: '',
-    phone: ''
+    phone: '',
+    addressLine: '',
+    city: ''
   });
+  
+  const [selectedAddressId, setSelectedAddressId] = useState<string>('NEW');
+  const [saveNewAddress, setSaveNewAddress] = useState(true);
+  
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.COD);
   const [isProcessing, setIsProcessing] = useState(false);
   const [step, setStep] = useState<'FORM' | 'QR_PAYMENT'>('FORM');
@@ -30,15 +55,79 @@ const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
       if (config.bankConfig) {
           setBankConfig(config.bankConfig);
       }
+      
+      const user = AuthService.getCurrentUser();
+      if (user) {
+          setCurrentUser(user);
+          // Pre-fill form if addresses exist
+          if (user.addresses && user.addresses.length > 0) {
+              const defaultAddr = user.addresses.find(a => a.isDefault) || user.addresses[0];
+              setSelectedAddressId(defaultAddr.id);
+              fillFormWithAddress(defaultAddr, user.email || '');
+          } else {
+              // Pre-fill partial info from profile if no specific address saved
+              setFormData(prev => ({
+                  ...prev,
+                  name: user.name,
+                  email: user.email || '',
+                  phone: user.phoneNumber || '',
+                  city: user.city || ''
+              }));
+          }
+      }
   }, []);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const fillFormWithAddress = (addr: Address, email: string) => {
+      setFormData({
+          name: addr.recipientName,
+          email: email, // Email usually comes from user account, not address record
+          phone: addr.phoneNumber,
+          addressLine: addr.addressLine,
+          city: addr.city
+      });
+  };
+
+  const handleAddressSelection = (id: string) => {
+      setSelectedAddressId(id);
+      if (id === 'NEW') {
+          setFormData({
+              name: currentUser?.name || '',
+              email: currentUser?.email || '',
+              phone: currentUser?.phoneNumber || '',
+              addressLine: '',
+              city: currentUser?.city || ''
+          });
+      } else if (currentUser && currentUser.addresses) {
+          const addr = currentUser.addresses.find(a => a.id === id);
+          if (addr) fillFormWithAddress(addr, currentUser.email || '');
+      }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const handleCreateOrder = (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
+
+    const fullAddress = `${formData.addressLine}, ${formData.city}`;
+
+    // Logic to save new address if user selected 'NEW' and checked box
+    if (currentUser && selectedAddressId === 'NEW' && saveNewAddress) {
+        const newAddr: Address = {
+            id: `ADDR-${Date.now()}`,
+            label: 'Địa chỉ mới',
+            recipientName: formData.name,
+            phoneNumber: formData.phone,
+            city: formData.city,
+            addressLine: formData.addressLine,
+            isDefault: (currentUser.addresses?.length || 0) === 0
+        };
+        const updatedAddresses = currentUser.addresses ? [...currentUser.addresses, newAddr] : [newAddr];
+        const updatedUser = { ...currentUser, addresses: updatedAddresses };
+        AuthService.updateProfile(updatedUser); // Fire and forget update
+    }
 
     // Simulate creation delay
     setTimeout(() => {
@@ -49,11 +138,11 @@ const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
                 {
                     name: formData.name,
                     email: formData.email,
-                    address: formData.address,
+                    address: fullAddress,
                     paymentMethod: 'Thanh toán khi nhận hàng (COD)'
                 },
                 total,
-                undefined,
+                currentUser?.id,
                 PaymentStatus.PENDING
             );
             clearCart();
@@ -67,11 +156,11 @@ const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
                 {
                     name: formData.name,
                     email: formData.email,
-                    address: formData.address,
+                    address: fullAddress,
                     paymentMethod: 'Chuyển khoản Ngân hàng (QR)'
                 },
                 total,
-                undefined,
+                currentUser?.id,
                 PaymentStatus.PENDING
             );
             setTempOrderId(order.id);
@@ -83,14 +172,8 @@ const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
 
   const handleConfirmTransfer = async () => {
       setIsProcessing(true);
-      // Mock checking transaction
       const success = await PaymentService.checkTransactionStatus(tempOrderId);
       if (success) {
-          // Update Order to PAID
-          // NOTE: In a real app, this update happens via Webhook on the backend.
-          // Here we just mock updating the local storage "status" if we had an update method exposed for payment status.
-          // Since we don't have a direct "updatePaymentStatus" exposed in StorageService for this demo, we'll just assume success UI.
-          
           clearCart();
           setIsProcessing(false);
           alert('Thanh toán thành công! Cảm ơn bạn đã mua hàng.');
@@ -126,34 +209,9 @@ const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
                     <p className="text-gray-600 mb-6 text-center">
                         Vui lòng mở ứng dụng ngân hàng và quét mã QR bên dưới để thanh toán.
                     </p>
-                    
                     <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-100 mb-6">
                         <img src={qrUrl} alt="VietQR" className="w-64 h-64 object-contain" />
                     </div>
-
-                    <div className="w-full bg-gray-50 rounded-xl p-4 mb-8 text-sm space-y-2">
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Ngân hàng:</span>
-                            <span className="font-bold text-gray-900">{bankConfig.bankId}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Số tài khoản:</span>
-                            <span className="font-bold text-gray-900">{bankConfig.accountNo}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Chủ tài khoản:</span>
-                            <span className="font-bold text-gray-900">{bankConfig.accountName}</span>
-                        </div>
-                        <div className="flex justify-between border-t border-gray-200 pt-2 mt-2">
-                            <span className="text-gray-500">Số tiền:</span>
-                            <span className="font-bold text-nintendo-red text-lg">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Nội dung:</span>
-                            <span className="font-bold text-blue-600">THANHTOAN {tempOrderId}</span>
-                        </div>
-                    </div>
-
                     <button 
                         onClick={handleConfirmTransfer}
                         disabled={isProcessing}
@@ -161,12 +219,7 @@ const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
                     >
                         {isProcessing ? 'Đang kiểm tra...' : 'Tôi đã chuyển khoản'}
                     </button>
-                    <button 
-                        onClick={() => navigate('/')}
-                        className="mt-4 text-gray-500 font-bold text-sm hover:text-gray-800"
-                    >
-                        Để sau, về trang chủ
-                    </button>
+                    <button onClick={() => navigate('/')} className="mt-4 text-gray-500 font-bold text-sm hover:text-gray-800">Để sau, về trang chủ</button>
                 </div>
             </div>
         </div>
@@ -179,7 +232,7 @@ const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
       
       <div className="grid lg:grid-cols-2 gap-12">
         {/* Order Summary */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm h-fit border border-gray-100">
+        <div className="bg-white p-6 rounded-2xl shadow-sm h-fit border border-gray-100 order-2 lg:order-1">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <span className="material-icons-round text-gray-400">shopping_bag</span>
               Đơn hàng của bạn
@@ -211,7 +264,7 @@ const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
         </div>
 
         {/* Payment Form */}
-        <form onSubmit={handleCreateOrder} className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 relative overflow-hidden">
+        <form onSubmit={handleCreateOrder} className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 relative overflow-hidden order-1 lg:order-2">
           <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-nintendo-red to-red-600"></div>
           <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
               <span className="material-icons-round text-nintendo-red">local_shipping</span>
@@ -219,26 +272,66 @@ const Checkout: React.FC<CheckoutProps> = ({ cart, total, clearCart }) => {
           </h2>
           
           <div className="space-y-5">
+            {currentUser && currentUser.addresses && currentUser.addresses.length > 0 && (
+                <div className="mb-4">
+                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Chọn từ sổ địa chỉ</label>
+                    <select 
+                        className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-gray-900 font-bold focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value={selectedAddressId}
+                        onChange={(e) => handleAddressSelection(e.target.value)}
+                    >
+                        {currentUser.addresses.map(addr => (
+                            <option key={addr.id} value={addr.id}>
+                                {addr.label} - {addr.addressLine}, {addr.city}
+                            </option>
+                        ))}
+                        <option value="NEW">+ Thêm địa chỉ giao hàng mới</option>
+                    </select>
+                </div>
+            )}
+
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Họ và tên</label>
-              <input required name="name" onChange={handleInputChange} type="text" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium focus:ring-2 focus:ring-nintendo-red focus:bg-white focus:border-transparent transition-all outline-none" placeholder="Nguyễn Văn A" />
+              <input required name="name" value={formData.name} onChange={handleInputChange} type="text" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium focus:ring-2 focus:ring-nintendo-red focus:bg-white focus:border-transparent transition-all outline-none" placeholder="Nguyễn Văn A" />
             </div>
             
             <div className="grid grid-cols-2 gap-4">
                 <div>
                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Số điện thoại</label>
-                    <input required name="phone" onChange={handleInputChange} type="tel" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium focus:ring-2 focus:ring-nintendo-red focus:bg-white focus:border-transparent transition-all outline-none" placeholder="0912..." />
+                    <input required name="phone" value={formData.phone} onChange={handleInputChange} type="tel" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium focus:ring-2 focus:ring-nintendo-red focus:bg-white focus:border-transparent transition-all outline-none" placeholder="0912..." />
                 </div>
                 <div>
                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Email</label>
-                    <input required name="email" onChange={handleInputChange} type="email" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium focus:ring-2 focus:ring-nintendo-red focus:bg-white focus:border-transparent transition-all outline-none" placeholder="example@mail.com" />
+                    <input required name="email" value={formData.email} onChange={handleInputChange} type="email" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium focus:ring-2 focus:ring-nintendo-red focus:bg-white focus:border-transparent transition-all outline-none" placeholder="example@mail.com" />
+                </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Tỉnh/Thành phố</label>
+                     <select required name="city" value={formData.city} onChange={handleInputChange} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium focus:ring-2 focus:ring-nintendo-red focus:bg-white focus:border-transparent transition-all outline-none appearance-none">
+                         <option value="">Chọn...</option>
+                         {VN_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                     </select>
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Địa chỉ cụ thể</label>
+                    <input required name="addressLine" value={formData.addressLine} onChange={handleInputChange} type="text" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium focus:ring-2 focus:ring-nintendo-red focus:bg-white focus:border-transparent transition-all outline-none" placeholder="Số nhà, đường, phường..." />
                 </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Địa chỉ nhận hàng</label>
-              <input required name="address" onChange={handleInputChange} type="text" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium focus:ring-2 focus:ring-nintendo-red focus:bg-white focus:border-transparent transition-all outline-none" placeholder="Số nhà, Đường, Phường/Xã..." />
-            </div>
+            {selectedAddressId === 'NEW' && currentUser && (
+                <div className="flex items-center gap-2">
+                    <input 
+                        type="checkbox" 
+                        id="saveAddress" 
+                        checked={saveNewAddress} 
+                        onChange={(e) => setSaveNewAddress(e.target.checked)}
+                        className="w-4 h-4 text-nintendo-red rounded focus:ring-nintendo-red border-gray-300" 
+                    />
+                    <label htmlFor="saveAddress" className="text-sm text-gray-600 cursor-pointer select-none">Lưu vào sổ địa chỉ cho lần sau</label>
+                </div>
+            )}
 
             <div className="pt-6 mt-6 border-t border-gray-100">
               <h3 className="font-bold mb-4 flex items-center gap-2">

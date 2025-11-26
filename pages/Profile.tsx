@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthService } from '../services/auth';
 import { StorageService } from '../services/storage';
-import { User, Order, OrderStatus } from '../types';
+import { User, Order, OrderStatus, Address } from '../types';
 import { isValidVietnamesePhoneNumber, fileToBase64 } from '../utils/helpers';
 
 const VN_CITIES = [
@@ -25,9 +26,25 @@ const Profile: React.FC = () => {
     const navigate = useNavigate();
     const [user, setUser] = useState<User | null>(null);
     const [orders, setOrders] = useState<Order[]>([]);
-    const [activeTab, setActiveTab] = useState<'INFO' | 'ORDERS'>('INFO');
+    const [activeTab, setActiveTab] = useState<'INFO' | 'ORDERS' | 'ADDRESS'>('INFO');
     const [isEditing, setIsEditing] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Delete Modal State
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [addressToDelete, setAddressToDelete] = useState<string | null>(null);
+
+    // Address Form State
+    const [showAddressForm, setShowAddressForm] = useState(false);
+    const [newAddress, setNewAddress] = useState<Address>({
+        id: '',
+        label: 'Nhà riêng',
+        recipientName: '',
+        phoneNumber: '',
+        city: '',
+        addressLine: '',
+        isDefault: false
+    });
 
     // Edit Form State
     const [formData, setFormData] = useState({
@@ -37,6 +54,10 @@ const Profile: React.FC = () => {
         city: '',
         avatar: ''
     });
+
+    // UI Styles
+    const inputClass = "w-full border border-gray-300 bg-white text-gray-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-nintendo-red focus:border-transparent transition-all shadow-sm";
+    const labelClass = "block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide";
 
     useEffect(() => {
         const currentUser = AuthService.getCurrentUser();
@@ -63,9 +84,6 @@ const Profile: React.FC = () => {
             try {
                 const base64 = await fileToBase64(e.target.files[0]);
                 setFormData({ ...formData, avatar: base64 });
-                // If not in editing mode, confirm update immediately? 
-                // Better to let user switch to edit mode or just save avatar separately.
-                // For UX, let's just update the preview and let them click Save.
                 setIsEditing(true); 
             } catch (error) {
                 console.error("Error reading file", error);
@@ -102,6 +120,60 @@ const Profile: React.FC = () => {
             alert("Có lỗi xảy ra khi cập nhật.");
         }
     };
+
+    const handleAddAddress = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if(!user) return;
+        
+        const addressToAdd: Address = {
+            ...newAddress,
+            id: `ADDR-${Date.now()}`,
+            isDefault: (user.addresses?.length || 0) === 0 ? true : newAddress.isDefault // First address is always default
+        };
+
+        // If setting as default, unset others
+        let updatedAddresses = user.addresses ? [...user.addresses] : [];
+        if (addressToAdd.isDefault) {
+            updatedAddresses = updatedAddresses.map(a => ({...a, isDefault: false}));
+        }
+        updatedAddresses.push(addressToAdd);
+
+        const updatedUser = { ...user, addresses: updatedAddresses };
+        await AuthService.updateProfile(updatedUser);
+        setUser(updatedUser);
+        setShowAddressForm(false);
+        // Reset form
+        setNewAddress({
+            id: '',
+            label: 'Nhà riêng',
+            recipientName: user.name,
+            phoneNumber: user.phoneNumber || '',
+            city: user.city || '',
+            addressLine: '',
+            isDefault: false
+        });
+    };
+
+    const initiateDeleteAddress = (id: string) => {
+        setAddressToDelete(id);
+        setShowDeleteModal(true);
+    };
+
+    const confirmDeleteAddress = async () => {
+        if(!user || !user.addresses || !addressToDelete) return;
+
+        const updatedAddresses = user.addresses.filter(a => a.id !== addressToDelete);
+        const updatedUser = { ...user, addresses: updatedAddresses };
+        
+        try {
+            await AuthService.updateProfile(updatedUser);
+            setUser(updatedUser);
+            setShowDeleteModal(false);
+            setAddressToDelete(null);
+        } catch (error) {
+            alert("Có lỗi xảy ra khi xóa địa chỉ.");
+        }
+    }
 
     if (!user) return null;
 
@@ -144,6 +216,13 @@ const Profile: React.FC = () => {
                                     Thông tin tài khoản
                                 </button>
                                 <button 
+                                    onClick={() => setActiveTab('ADDRESS')}
+                                    className={`w-full py-2 px-4 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${activeTab === 'ADDRESS' ? 'bg-nintendo-red text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                                >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                    Sổ địa chỉ
+                                </button>
+                                <button 
                                     onClick={() => setActiveTab('ORDERS')}
                                     className={`w-full py-2 px-4 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${activeTab === 'ORDERS' ? 'bg-nintendo-red text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                                 >
@@ -166,7 +245,8 @@ const Profile: React.FC = () => {
                     {/* Main Content */}
                     <div className="flex-1">
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 animate-fade-in-up">
-                            {activeTab === 'INFO' ? (
+                            
+                            {activeTab === 'INFO' && (
                                 <div>
                                     <div className="flex justify-between items-center mb-6">
                                         <h3 className="text-2xl font-bold text-gray-900">Thông tin cá nhân</h3>
@@ -184,36 +264,36 @@ const Profile: React.FC = () => {
                                         <form onSubmit={handleUpdateProfile} className="space-y-6">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div>
-                                                    <label className="block text-sm font-bold text-gray-700 mb-1">Họ tên</label>
+                                                    <label className={labelClass}>Họ tên</label>
                                                     <input 
                                                         type="text" 
-                                                        className="w-full border border-gray-300 bg-white text-gray-900 rounded-lg px-4 py-2 focus:ring-2 focus:ring-nintendo-red focus:outline-none"
+                                                        className={inputClass}
                                                         value={formData.name}
                                                         onChange={(e) => setFormData({...formData, name: e.target.value})}
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-bold text-gray-700 mb-1">Số điện thoại</label>
+                                                    <label className={labelClass}>Số điện thoại</label>
                                                     <input 
                                                         type="text" 
-                                                        className="w-full border border-gray-300 bg-white text-gray-900 rounded-lg px-4 py-2 focus:ring-2 focus:ring-nintendo-red focus:outline-none"
+                                                        className={inputClass}
                                                         value={formData.phoneNumber}
                                                         onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})}
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-bold text-gray-700 mb-1">Ngày sinh</label>
+                                                    <label className={labelClass}>Ngày sinh</label>
                                                     <input 
                                                         type="date" 
-                                                        className="w-full border border-gray-300 bg-white text-gray-900 rounded-lg px-4 py-2 focus:ring-2 focus:ring-nintendo-red focus:outline-none"
+                                                        className={inputClass}
                                                         value={formData.dob}
                                                         onChange={(e) => setFormData({...formData, dob: e.target.value})}
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-bold text-gray-700 mb-1">Tỉnh/Thành phố</label>
+                                                    <label className={labelClass}>Tỉnh/Thành phố (Mặc định)</label>
                                                     <select
-                                                        className="w-full border border-gray-300 bg-white text-gray-900 rounded-lg px-4 py-2 focus:ring-2 focus:ring-nintendo-red focus:outline-none"
+                                                        className={inputClass}
                                                         value={formData.city}
                                                         onChange={(e) => setFormData({...formData, city: e.target.value})}
                                                     >
@@ -224,18 +304,18 @@ const Profile: React.FC = () => {
                                                     </select>
                                                 </div>
                                                 <div className="col-span-1 md:col-span-2">
-                                                    <label className="block text-sm font-bold text-gray-700 mb-1">Email (Không thể thay đổi)</label>
+                                                    <label className={labelClass}>Email (Không thể thay đổi)</label>
                                                     <input 
                                                         type="email" 
                                                         disabled
-                                                        className="w-full border border-gray-200 bg-gray-100 text-gray-500 rounded-lg px-4 py-2 cursor-not-allowed"
+                                                        className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200`}
                                                         value={user.email || ''}
                                                     />
                                                 </div>
                                             </div>
                                             <div className="flex gap-4 pt-4">
-                                                <button type="submit" className="bg-nintendo-red text-white font-bold px-6 py-2 rounded-lg hover:bg-nintendo-dark transition-colors">Lưu thay đổi</button>
-                                                <button type="button" onClick={() => { setIsEditing(false); setFormData({...formData, avatar: user.avatar || ''}); }} className="bg-gray-200 text-gray-800 font-bold px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors">Hủy</button>
+                                                <button type="submit" className="bg-nintendo-red text-white font-bold px-6 py-3 rounded-xl hover:bg-nintendo-dark transition-colors shadow-lg">Lưu thay đổi</button>
+                                                <button type="button" onClick={() => { setIsEditing(false); setFormData({...formData, avatar: user.avatar || ''}); }} className="bg-gray-100 text-gray-700 font-bold px-6 py-3 rounded-xl hover:bg-gray-200 transition-colors">Hủy</button>
                                             </div>
                                         </form>
                                     ) : (
@@ -267,7 +347,105 @@ const Profile: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                            ) : (
+                            )}
+
+                            {activeTab === 'ADDRESS' && (
+                                <div>
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="text-2xl font-bold text-gray-900">Sổ Địa Chỉ</h3>
+                                        <button 
+                                            onClick={() => setShowAddressForm(true)}
+                                            className="bg-gray-900 text-white font-bold px-5 py-3 rounded-xl text-sm hover:bg-black transition-colors shadow-lg"
+                                        >
+                                            + Thêm địa chỉ mới
+                                        </button>
+                                    </div>
+                                    
+                                    {showAddressForm && (
+                                        <form onSubmit={handleAddAddress} className="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-8 animate-fade-in-up">
+                                            <h4 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                                                <span className="material-icons-round text-nintendo-red">add_location</span> 
+                                                Thêm địa chỉ giao hàng
+                                            </h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                 <div>
+                                                    <label className={labelClass}>Tên gợi nhớ</label>
+                                                    <input required type="text" className={inputClass} placeholder="VD: Nhà riêng, Công ty..." value={newAddress.label} onChange={e => setNewAddress({...newAddress, label: e.target.value})} />
+                                                 </div>
+                                                 <div>
+                                                    <label className={labelClass}>Tên người nhận</label>
+                                                    <input required type="text" className={inputClass} value={newAddress.recipientName} onChange={e => setNewAddress({...newAddress, recipientName: e.target.value})} />
+                                                 </div>
+                                                 <div>
+                                                    <label className={labelClass}>Số điện thoại</label>
+                                                    <input required type="text" className={inputClass} value={newAddress.phoneNumber} onChange={e => setNewAddress({...newAddress, phoneNumber: e.target.value})} />
+                                                 </div>
+                                                 <div>
+                                                    <label className={labelClass}>Tỉnh/Thành phố</label>
+                                                    <select className={inputClass} value={newAddress.city} onChange={e => setNewAddress({...newAddress, city: e.target.value})}>
+                                                        <option value="">Chọn...</option>
+                                                        {VN_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
+                                                 </div>
+                                                 <div className="col-span-1 md:col-span-2">
+                                                    <label className={labelClass}>Địa chỉ cụ thể</label>
+                                                    <input required type="text" className={inputClass} placeholder="Số nhà, tên đường, phường/xã..." value={newAddress.addressLine} onChange={e => setNewAddress({...newAddress, addressLine: e.target.value})} />
+                                                 </div>
+                                                 <div className="col-span-1 md:col-span-2 flex items-center gap-2 bg-white p-3 rounded-xl border border-gray-200">
+                                                     <input type="checkbox" id="defaultAddr" className="w-5 h-5 text-nintendo-red rounded focus:ring-nintendo-red" checked={newAddress.isDefault} onChange={e => setNewAddress({...newAddress, isDefault: e.target.checked})} />
+                                                     <label htmlFor="defaultAddr" className="text-sm font-bold text-gray-700 cursor-pointer select-none">Đặt làm địa chỉ mặc định cho các đơn hàng sau</label>
+                                                 </div>
+                                            </div>
+                                            <div className="flex gap-4 mt-6">
+                                                <button type="submit" className="bg-nintendo-red text-white font-bold px-6 py-3 rounded-xl hover:bg-nintendo-dark transition-colors shadow-lg">Lưu Địa Chỉ</button>
+                                                <button type="button" onClick={() => setShowAddressForm(false)} className="bg-white text-gray-700 font-bold px-6 py-3 rounded-xl hover:bg-gray-100 transition-colors border border-gray-300">Hủy</button>
+                                            </div>
+                                        </form>
+                                    )}
+
+                                    <div className="grid gap-4">
+                                        {user.addresses && user.addresses.length > 0 ? (
+                                            user.addresses.map(addr => (
+                                                <div key={addr.id} className="border border-gray-200 rounded-2xl p-5 flex justify-between items-start hover:shadow-md transition-shadow bg-white group">
+                                                    <div>
+                                                        <div className="flex items-center gap-3 mb-2">
+                                                            <span className="font-bold text-gray-900 text-lg">{addr.label}</span>
+                                                            {addr.isDefault && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">Mặc định</span>}
+                                                        </div>
+                                                        <p className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                                            <span className="material-icons-round text-gray-400 text-sm">person</span>
+                                                            {addr.recipientName} 
+                                                            <span className="text-gray-300">|</span> 
+                                                            <span className="material-icons-round text-gray-400 text-sm">phone</span>
+                                                            {addr.phoneNumber}
+                                                        </p>
+                                                        <p className="text-sm text-gray-600 mt-2 flex items-start gap-2">
+                                                            <span className="material-icons-round text-gray-400 text-sm mt-0.5">location_on</span>
+                                                            <span>{addr.addressLine}, {addr.city}</span>
+                                                        </p>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => initiateDeleteAddress(addr.id)} 
+                                                        className="text-gray-300 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-colors"
+                                                        title="Xóa địa chỉ này"
+                                                    >
+                                                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-dashed border-gray-200">
+                                                <span className="material-icons-round text-4xl mb-2 text-gray-300">location_off</span>
+                                                <p>Chưa có địa chỉ nào được lưu.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'ORDERS' && (
                                 <div>
                                      <h3 className="text-2xl font-bold text-gray-900 mb-6">Lịch sử đơn hàng</h3>
                                      {orders.length === 0 ? (
@@ -325,6 +503,33 @@ const Profile: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl transform transition-all scale-100">
+                        <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mb-4 text-red-500 mx-auto">
+                            <span className="material-icons-round text-2xl">delete_forever</span>
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900 text-center mb-2">Xóa địa chỉ?</h3>
+                        <p className="text-sm text-gray-500 text-center mb-6">Bạn có chắc chắn muốn xóa địa chỉ này khỏi sổ địa chỉ không? Hành động này không thể hoàn tác.</p>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setShowDeleteModal(false)} 
+                                className="flex-1 px-4 py-3 rounded-xl text-gray-700 font-bold bg-gray-100 hover:bg-gray-200 transition-colors"
+                            >
+                                Hủy bỏ
+                            </button>
+                            <button 
+                                onClick={confirmDeleteAddress} 
+                                className="flex-1 px-4 py-3 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-500/30"
+                            >
+                                Xóa vĩnh viễn
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -1,4 +1,5 @@
-import { User, UserRole } from '../types';
+
+import { User, UserRole, Address } from '../types';
 import { StorageService } from './storage';
 
 const USER_KEY = 'nintenstore_user';
@@ -33,7 +34,8 @@ export const AuthService = {
             name: 'Super Admin',
             email: 'admin@ninten.com',
             role: 'ADMIN',
-            avatar: 'https://ui-avatars.com/api/?name=Admin&background=000&color=fff'
+            avatar: 'https://ui-avatars.com/api/?name=Admin&background=000&color=fff',
+            addresses: []
         };
         localStorage.setItem(USER_KEY, JSON.stringify(adminUser));
         return adminUser;
@@ -48,7 +50,8 @@ export const AuthService = {
             name: 'Demo User',
             email: 'user@gmail.com',
             role: 'CUSTOMER',
-            avatar: 'https://ui-avatars.com/api/?name=Demo&background=E60012&color=fff'
+            avatar: 'https://ui-avatars.com/api/?name=Demo&background=E60012&color=fff',
+            addresses: []
         };
         localStorage.setItem(USER_KEY, JSON.stringify(demoUser));
         return demoUser;
@@ -79,6 +82,17 @@ export const AuthService = {
         throw new Error("Mã OTP không hợp lệ");
     }
 
+    // Create initial default address based on input info
+    const initialAddress: Address = {
+        id: `ADDR-${Date.now()}`,
+        label: 'Mặc định',
+        recipientName: payload.name,
+        phoneNumber: payload.phoneNumber || '', // If reg via email, this might be empty, user updates later
+        city: payload.city,
+        addressLine: '', // Empty initially, user fills later
+        isDefault: true
+    };
+
     const newUser: User = {
       id: `USR-${Date.now()}`,
       email: payload.email,
@@ -88,7 +102,8 @@ export const AuthService = {
       city: payload.city,
       role: 'CUSTOMER', 
       createdAt: new Date().toISOString(),
-      avatar: `https://ui-avatars.com/api/?name=${payload.name}&background=E60012&color=fff`
+      avatar: `https://ui-avatars.com/api/?name=${payload.name}&background=E60012&color=fff`,
+      addresses: [initialAddress]
     };
 
     // Save to "Database" so Admin can see
@@ -112,7 +127,12 @@ export const AuthService = {
   },
 
   getCurrentUser: (): User | null => {
-    const userStr = localStorage.getItem(USER_KEY);
-    return userStr ? JSON.parse(userStr) : null;
+    try {
+        const userStr = localStorage.getItem(USER_KEY);
+        return userStr ? JSON.parse(userStr) : null;
+    } catch (error) {
+        console.error("Error parsing user from storage", error);
+        return null;
+    }
   }
 };

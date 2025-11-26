@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { HashRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import Shop from './pages/Shop';
@@ -21,7 +22,12 @@ const AppContent: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
+  // Initialize synchronously to avoid "flicker" of null state which causes redirects
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+      return AuthService.getCurrentUser();
+  });
+  
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(StorageService.getSiteConfig());
 
   const navigate = useNavigate();
@@ -50,10 +56,6 @@ const AppContent: React.FC = () => {
       setCart(JSON.parse(savedCart));
     }
 
-    // Load User
-    const user = AuthService.getCurrentUser();
-    setCurrentUser(user);
-
     return () => {
         window.removeEventListener('nintenstore_data_change', loadData);
     };
@@ -77,7 +79,9 @@ const AppContent: React.FC = () => {
 
   // Cart Actions with Auth Guard
   const addToCart = (product: Product) => {
+    // Check login ONLY when adding to cart
     if (!currentUser) {
+        // Redirect to login, saving the current location to return to
         navigate('/login', { state: { from: location } });
         return;
     }
@@ -108,7 +112,10 @@ const AppContent: React.FC = () => {
   const cartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   // Exclude Navbar on Login/Register/Admin pages for cleaner look
-  const isSpecialPage = location.pathname === '/login' || location.pathname === '/register' || location.pathname === '/forgot-password' || location.pathname.startsWith('/admin');
+  const isSpecialPage = location.pathname === '/login' || 
+                        location.pathname === '/register' || 
+                        location.pathname === '/forgot-password' || 
+                        location.pathname.startsWith('/admin');
 
   return (
     <div className="min-h-screen font-sans text-gray-800 bg-white flex flex-col">
@@ -126,12 +133,37 @@ const AppContent: React.FC = () => {
           <Route path="/" element={<Home featuredProducts={products} onAddToCart={addToCart} onViewDetails={() => {}} />} />
           <Route path="/shop" element={<Shop products={products} onAddToCart={addToCart} onViewDetails={() => {}} />} />
           <Route path="/product/:id" element={<ProductDetail onAddToCart={addToCart}/>} />
-          <Route path="/checkout" element={<Checkout cart={cart} total={cartTotal} clearCart={clearCart} />} />
+          
+          {/* Protected Route Logic for Checkout */}
+          <Route path="/checkout" element={
+              currentUser ? (
+                  <Checkout cart={cart} total={cartTotal} clearCart={clearCart} />
+              ) : (
+                  <Navigate to="/login" state={{ from: location }} replace />
+              )
+          } />
+
           <Route path="/login" element={<Login onLogin={handleLogin} />} />
           <Route path="/register" element={<Register onLogin={handleLogin} />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/admin" element={currentUser?.role === 'ADMIN' ? <AdminDashboard /> : <div className="text-center py-20">Access Denied</div>} />
+          
+          {/* Protected Route for Profile */}
+          <Route path="/profile" element={
+              currentUser ? (
+                  <Profile /> 
+              ) : (
+                  <Navigate to="/login" state={{ from: location }} replace />
+              )
+          } />
+          
+          {/* Protected Route for Admin */}
+          <Route path="/admin" element={
+            currentUser ? (
+                currentUser.role === 'ADMIN' ? <AdminDashboard /> : <div className="text-center py-20 text-red-500 font-bold">Access Denied. Cần quyền quản trị viên.</div>
+            ) : (
+                <Navigate to="/login" state={{ from: location }} replace />
+            )
+          } />
         </Routes>
       </main>
 
