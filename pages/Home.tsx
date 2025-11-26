@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Product, HeroSlide } from '../types';
+import { Product, HeroSlide, SiteConfig } from '../types';
 import ProductCard from '../components/ProductCard';
 import { StorageService } from '../services/storage';
 
 interface HomeProps {
-  featuredProducts: Product[];
+  featuredProducts: Product[]; // Kept for backward compat but mainly using internal logic now
   onAddToCart: (p: Product) => void;
   onViewDetails: (p: Product) => void;
 }
@@ -14,17 +14,21 @@ interface HomeProps {
 const Home: React.FC<HomeProps> = ({ featuredProducts, onAddToCart }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [heroSlides, setHeroSlides] = useState<HeroSlide[]>([]);
+  const [siteConfig, setSiteConfig] = useState<SiteConfig>({ facebookUrl: '' });
+  const [products, setProducts] = useState<Product[]>([]);
 
   useEffect(() => {
-    const loadSlides = () => {
+    const loadData = () => {
         setHeroSlides(StorageService.getHeroSlides());
+        setSiteConfig(StorageService.getSiteConfig());
+        setProducts(StorageService.getProducts());
     };
-    loadSlides();
+    loadData();
 
     // Listen for admin changes
-    window.addEventListener('nintenstore_data_change', loadSlides);
+    window.addEventListener('nintenstore_data_change', loadData);
     return () => {
-        window.removeEventListener('nintenstore_data_change', loadSlides);
+        window.removeEventListener('nintenstore_data_change', loadData);
     };
   }, []);
 
@@ -37,6 +41,14 @@ const Home: React.FC<HomeProps> = ({ featuredProducts, onAddToCart }) => {
 
     return () => clearInterval(slideInterval);
   }, [heroSlides.length]);
+
+  const getProductsForSection = (categorySlug: string, limit: number) => {
+      let filtered = products;
+      if (categorySlug !== 'ALL') {
+          filtered = products.filter(p => p.category === categorySlug);
+      }
+      return filtered.slice(0, limit);
+  };
 
   if (heroSlides.length === 0) return null;
 
@@ -137,34 +149,42 @@ const Home: React.FC<HomeProps> = ({ featuredProducts, onAddToCart }) => {
          </div>
       </div>
 
-      {/* Featured Products */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col sm:flex-row justify-between items-end mb-10 gap-4">
-            <div>
-                <span className="text-nintendo-red font-bold text-sm tracking-widest uppercase block mb-1">Trending</span>
-                <h2 className="text-3xl md:text-4xl font-black text-gray-900">Sản Phẩm Nổi Bật</h2>
+      {/* Dynamic Home Sections */}
+      {siteConfig.homeSections && siteConfig.homeSections.map(section => {
+          const sectionProducts = getProductsForSection(section.categorySlug, section.limit);
+          if (sectionProducts.length === 0) return null;
+
+          return (
+            <div key={section.id} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="flex flex-col sm:flex-row justify-between items-end mb-10 gap-4 border-b border-gray-100 pb-4">
+                    <div>
+                        <span className="text-nintendo-red font-bold text-sm tracking-widest uppercase block mb-1">
+                            {section.categorySlug === 'ALL' ? 'Bộ Sưu Tập' : section.categorySlug}
+                        </span>
+                        <h2 className="text-3xl md:text-4xl font-black text-gray-900">{section.title}</h2>
+                    </div>
+                    <Link to="/shop" className="group flex items-center gap-2 text-gray-500 font-bold hover:text-nintendo-red transition-all">
+                        Xem tất cả 
+                        <span className="bg-gray-100 group-hover:bg-red-100 group-hover:text-nintendo-red p-1.5 rounded-full transition-colors">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                        </span>
+                    </Link>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
+                {sectionProducts.map(product => (
+                    <ProductCard 
+                    key={product.id} 
+                    product={product} 
+                    onAddToCart={onAddToCart}
+                    />
+                ))}
+                </div>
             </div>
-            <Link to="/shop" className="group flex items-center gap-2 text-gray-500 font-bold hover:text-nintendo-red transition-all">
-                Xem tất cả 
-                <span className="bg-gray-100 group-hover:bg-red-100 group-hover:text-nintendo-red p-1.5 rounded-full transition-colors">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                  </svg>
-                </span>
-            </Link>
-        </div>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
-          {featuredProducts.slice(0, 4).map(product => (
-            <ProductCard 
-              key={product.id} 
-              product={product} 
-              onAddToCart={onAddToCart}
-            />
-          ))}
-        </div>
-      </div>
-      
+          );
+      })}
     </div>
   );
 };

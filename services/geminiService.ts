@@ -1,6 +1,19 @@
+
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = process.env.API_KEY || ''; 
+// Safely access process.env to avoid "process is not defined" errors in browser environments without polyfills
+const getApiKey = () => {
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env.API_KEY || '';
+    }
+  } catch (e) {
+    console.warn("Environment variable access failed", e);
+  }
+  return '';
+};
+
+const apiKey = getApiKey();
 
 // Initialize GenAI
 const ai = new GoogleGenAI({ apiKey });
@@ -8,7 +21,7 @@ const ai = new GoogleGenAI({ apiKey });
 export const GeminiService = {
   async chatWithAssistant(history: { role: string; text: string }[], userMessage: string): Promise<string> {
     if (!apiKey) {
-      return "Xin lỗi, tôi chưa được cấu hình API Key. Hãy thêm khóa API vào môi trường.";
+      return "Xin lỗi, tôi chưa được cấu hình API Key. Hãy thêm khóa API vào file .env ở local hoặc cấu hình môi trường.";
     }
 
     try {

@@ -1,6 +1,5 @@
 
-
-// Enums - Deprecated for Category, keeping for Order/Payment status
+// Enums
 export enum PaymentStatus {
   PENDING = 'PENDING',
   PAID = 'PAID',
@@ -14,13 +13,19 @@ export enum OrderStatus {
   CANCELLED = 'CANCELLED'
 }
 
+export enum PaymentMethod {
+  COD = 'COD',
+  BANK_TRANSFER = 'BANK_TRANSFER'
+}
+
 export type UserRole = 'ADMIN' | 'CUSTOMER';
 
-// Interfaces
+// --- Core Interfaces ---
+
 export interface Category {
   id: string;
   name: string;
-  slug: string; // Used for filtering e.g., 'CONSOLE', 'GAME'
+  slug: string;
   icon?: string; // Material Icon Name
   description?: string;
 }
@@ -34,7 +39,7 @@ export interface User {
   avatar?: string;
   dob?: string;        
   city?: string;
-  createdAt?: string; // Added for Admin tracking
+  createdAt?: string;
 }
 
 export interface Product {
@@ -42,7 +47,7 @@ export interface Product {
   title: string;
   description: string;
   price: number;
-  category: string; // Changed from Enum to string to support dynamic categories
+  category: string;
   imageUrl: string; 
   images: string[]; 
   videoUrl?: string; 
@@ -72,42 +77,36 @@ export interface Order {
   userId?: string; 
 }
 
-export interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
-  isLoading?: boolean;
-}
+// --- CMS / Admin Interfaces ---
 
-// New Interface for Homepage Management
 export interface HeroSlide {
   id: number;
   title: string;
   subtitle: string;
   image: string;
-  bgGradient: string; // e.g., "from-red-600 to-orange-500"
-  accentColor: string; // e.g., "bg-red-600"
+  bgGradient: string;
+  accentColor: string;
   theme: 'dark' | 'light';
 }
 
-// Inventory Management
 export interface StockImport {
     id: string;
     productId: string;
     quantity: number;
-    importPrice: number; // Cost per unit
+    importPrice: number;
     totalCost: number;
     timestamp: string;
     note?: string;
 }
 
-// Auth Page Configuration
+// --- Configuration Interfaces ---
+
 export interface PageContent {
     image?: string;
     title: string;
     subtitle: string;
 }
 
-// Footer Configuration
 export interface FooterLink {
     label: string;
     url: string;
@@ -124,7 +123,20 @@ export interface FooterConfig {
     copyright: string;
 }
 
-// Global Site Configuration
+export interface BankConfig {
+    bankId: string;
+    accountNo: string;
+    accountName: string;
+    template: string;
+}
+
+export interface HomeSection {
+    id: string;
+    title: string;
+    categorySlug: string; // Map to Category.slug or 'ALL'
+    limit: number;
+}
+
 export interface SiteConfig {
   facebookUrl: string; // m.me link
   contactPhone?: string;
@@ -135,4 +147,11 @@ export interface SiteConfig {
       forgotPassword: PageContent;
   };
   footerConfig?: FooterConfig;
+  bankConfig?: BankConfig;
+  homeSections?: HomeSection[];
+}
+
+export interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
 }

@@ -1,6 +1,5 @@
 
-
-import { Product, Order, OrderStatus, PaymentStatus, CartItem, User, HeroSlide, SiteConfig, Category, StockImport } from '../types';
+import { Product, Order, OrderStatus, PaymentStatus, CartItem, User, HeroSlide, SiteConfig, Category, StockImport, BankConfig } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CATEGORIES } from './data';
 
 const PRODUCTS_KEY = 'nintenstore_products';
@@ -148,7 +147,8 @@ export const StorageService = {
     items: CartItem[], 
     customerDetails: { name: string; email: string; address: string; paymentMethod: string },
     total: number,
-    userId?: string
+    userId?: string,
+    initialStatus: PaymentStatus = PaymentStatus.PENDING
   ): Order => {
     const ordersData = localStorage.getItem(ORDERS_KEY);
     const orders: Order[] = ordersData ? JSON.parse(ordersData) : [];
@@ -161,7 +161,7 @@ export const StorageService = {
       customerEmail: customerDetails.email,
       shippingAddress: customerDetails.address,
       paymentMethod: customerDetails.paymentMethod,
-      paymentStatus: PaymentStatus.PAID,
+      paymentStatus: initialStatus,
       orderStatus: OrderStatus.PROCESSING,
       transactionId: `TXN-${Math.floor(Math.random() * 1000000)}`,
       createdAt: new Date().toISOString(),
@@ -289,6 +289,25 @@ export const StorageService = {
                   }
               ]
           };
+      }
+      
+      // Ensure defaults for Bank Config
+      if (!config.bankConfig) {
+          config.bankConfig = {
+              bankId: 'MB',
+              accountNo: '000000000000',
+              accountName: 'NINTEN STORE',
+              template: 'compact'
+          };
+      }
+
+      // Ensure defaults for Home Page Sections
+      if (!config.homeSections || config.homeSections.length === 0) {
+          config.homeSections = [
+              { id: 'sec_1', title: 'Máy Console Nổi Bật', categorySlug: 'CONSOLE', limit: 4 },
+              { id: 'sec_2', title: 'Đĩa Game Mới Nhất', categorySlug: 'GAME', limit: 8 },
+              { id: 'sec_3', title: 'Phụ Kiện Thiết Yếu', categorySlug: 'ACCESSORY', limit: 4 }
+          ];
       }
 
       return config;

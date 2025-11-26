@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
@@ -12,7 +11,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import AdminDashboard from './pages/AdminDashboard';
 import Profile from './pages/Profile';
 import CartDrawer from './components/CartDrawer';
-import ChatWidget from './components/ChatWidget';
+import SocialFloatingButton from './components/SocialFloatingButton';
 import { Product, CartItem, User, SiteConfig } from './types';
 import { StorageService } from './services/storage';
 import { AuthService } from './services/auth';
@@ -29,14 +28,12 @@ const AppContent: React.FC = () => {
   const location = useLocation();
 
   // SCROLL TO TOP LOGIC
-  // Automatically scroll to top whenever the path or search query changes
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname, location.search]);
 
   // Load Data and Set up Listener
   useEffect(() => {
-    console.log('App mounted, loading data and setting up listeners.');
     const loadData = () => {
         setProducts(StorageService.getProducts());
         setSiteConfig(StorageService.getSiteConfig());
@@ -81,7 +78,6 @@ const AppContent: React.FC = () => {
   // Cart Actions with Auth Guard
   const addToCart = (product: Product) => {
     if (!currentUser) {
-        // Redirect to login, saving the current location to return to
         navigate('/login', { state: { from: location } });
         return;
     }
@@ -127,47 +123,15 @@ const AppContent: React.FC = () => {
       
       <main className="flex-grow">
         <Routes>
-          <Route path="/" element={
-            <Home 
-              featuredProducts={products} 
-              onAddToCart={addToCart} 
-              onViewDetails={() => {}} 
-            />
-          } />
-          <Route path="/shop" element={
-            <Shop 
-              products={products} 
-              onAddToCart={addToCart} 
-              onViewDetails={() => {}} 
-            />
-          } />
-          <Route path="/product/:id" element={
-            <ProductDetail 
-              onAddToCart={addToCart}
-            />
-          } />
-          <Route path="/checkout" element={
-            <Checkout 
-              cart={cart} 
-              total={cartTotal} 
-              clearCart={clearCart} 
-            />
-          } />
-          <Route path="/login" element={
-            <Login onLogin={handleLogin} />
-          } />
-          <Route path="/register" element={
-            <Register onLogin={handleLogin} />
-          } />
-          <Route path="/forgot-password" element={
-            <ForgotPassword />
-          } />
-          <Route path="/profile" element={
-            <Profile />
-          } />
-          <Route path="/admin" element={
-             currentUser?.role === 'ADMIN' ? <AdminDashboard /> : <div className="text-center py-20">Access Denied</div>
-          } />
+          <Route path="/" element={<Home featuredProducts={products} onAddToCart={addToCart} onViewDetails={() => {}} />} />
+          <Route path="/shop" element={<Shop products={products} onAddToCart={addToCart} onViewDetails={() => {}} />} />
+          <Route path="/product/:id" element={<ProductDetail onAddToCart={addToCart}/>} />
+          <Route path="/checkout" element={<Checkout cart={cart} total={cartTotal} clearCart={clearCart} />} />
+          <Route path="/login" element={<Login onLogin={handleLogin} />} />
+          <Route path="/register" element={<Register onLogin={handleLogin} />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/admin" element={currentUser?.role === 'ADMIN' ? <AdminDashboard /> : <div className="text-center py-20">Access Denied</div>} />
         </Routes>
       </main>
 
@@ -180,7 +144,6 @@ const AppContent: React.FC = () => {
                         {siteConfig.footerConfig.description}
                     </p>
                 </div>
-                
                 {siteConfig.footerConfig.sections.map((section, idx) => (
                     <div key={idx}>
                         <h3 className="font-bold text-lg mb-6">{section.title}</h3>
@@ -193,7 +156,6 @@ const AppContent: React.FC = () => {
                         </ul>
                     </div>
                 ))}
-
                 <div>
                     <h3 className="font-bold text-lg mb-6">Đăng ký tin mới</h3>
                     <div className="flex gap-2">
@@ -209,15 +171,8 @@ const AppContent: React.FC = () => {
       )}
 
       {/* Global Components */}
-      <CartDrawer 
-        isOpen={isCartOpen} 
-        onClose={() => setIsCartOpen(false)} 
-        cart={cart} 
-        onRemove={removeFromCart}
-        total={cartTotal}
-      />
-      
-      {!location.pathname.startsWith('/admin') && <ChatWidget />}
+      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} cart={cart} onRemove={removeFromCart} total={cartTotal}/>
+      {!location.pathname.startsWith('/admin') && <SocialFloatingButton />}
     </div>
   );
 };
