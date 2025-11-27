@@ -1,7 +1,8 @@
 
-import { Product, Order, OrderStatus, PaymentStatus, CartItem, User, HeroSlide, SiteConfig, Category, StockImport, BankConfig, Campaign, Voucher } from '../types';
+import { Product, Order, OrderStatus, PaymentStatus, CartItem, User, HeroSlide, SiteConfig, Category, StockImport, Campaign, Voucher } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CATEGORIES } from './data';
 
+// --- Keys ---
 const PRODUCTS_KEY = 'nintenstore_products';
 const ORDERS_KEY = 'nintenstore_orders';
 const USERS_KEY = 'nintenstore_users_db';
@@ -11,56 +12,44 @@ const CATEGORIES_KEY = 'nintenstore_categories';
 const IMPORTS_KEY = 'nintenstore_stock_imports';
 const CAMPAIGNS_KEY = 'nintenstore_campaigns';
 
-// Initialize DB
-if (!localStorage.getItem(PRODUCTS_KEY)) {
-  localStorage.setItem(PRODUCTS_KEY, JSON.stringify(INITIAL_PRODUCTS));
-}
-if (!localStorage.getItem(ORDERS_KEY)) {
-  localStorage.setItem(ORDERS_KEY, JSON.stringify([]));
-}
-if (!localStorage.getItem(SLIDES_KEY)) {
-  localStorage.setItem(SLIDES_KEY, JSON.stringify(INITIAL_HERO_SLIDES));
-}
-if (!localStorage.getItem(CATEGORIES_KEY)) {
-  localStorage.setItem(CATEGORIES_KEY, JSON.stringify(INITIAL_CATEGORIES));
-}
-if (!localStorage.getItem(IMPORTS_KEY)) {
-  localStorage.setItem(IMPORTS_KEY, JSON.stringify([]));
-}
-if (!localStorage.getItem(CAMPAIGNS_KEY)) {
-  localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify([]));
-}
-if (!localStorage.getItem(USERS_KEY)) {
-    // Seed an admin
+// --- Initialization Logic ---
+const initStorage = () => {
+  if (!localStorage.getItem(PRODUCTS_KEY)) localStorage.setItem(PRODUCTS_KEY, JSON.stringify(INITIAL_PRODUCTS));
+  if (!localStorage.getItem(ORDERS_KEY)) localStorage.setItem(ORDERS_KEY, JSON.stringify([]));
+  if (!localStorage.getItem(SLIDES_KEY)) localStorage.setItem(SLIDES_KEY, JSON.stringify(INITIAL_HERO_SLIDES));
+  if (!localStorage.getItem(CATEGORIES_KEY)) localStorage.setItem(CATEGORIES_KEY, JSON.stringify(INITIAL_CATEGORIES));
+  if (!localStorage.getItem(IMPORTS_KEY)) localStorage.setItem(IMPORTS_KEY, JSON.stringify([]));
+  if (!localStorage.getItem(CAMPAIGNS_KEY)) localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify([]));
+  
+  if (!localStorage.getItem(USERS_KEY)) {
     const adminUser: User = {
-        id: 'ADMIN_001',
-        name: 'Super Admin',
-        email: 'admin@ninten.com',
-        role: 'ADMIN',
-        createdAt: new Date().toISOString(),
-        avatar: 'https://ui-avatars.com/api/?name=Admin&background=000&color=fff',
-        addresses: [],
-        vouchers: []
+      id: 'ADMIN_001',
+      name: 'Super Admin',
+      email: 'admin@ninten.com',
+      role: 'ADMIN',
+      createdAt: new Date().toISOString(),
+      avatar: 'https://ui-avatars.com/api/?name=Admin&background=000&color=fff',
+      addresses: [],
+      vouchers: []
     };
     localStorage.setItem(USERS_KEY, JSON.stringify([adminUser]));
-}
-if (!localStorage.getItem(CONFIG_KEY)) {
-    // Initial config will be handled by getSiteConfig defaults
-}
-
-// Helper to notify listeners
-const notifyChange = () => {
-    window.dispatchEvent(new Event('nintenstore_data_change'));
+  }
 };
 
-// Private helper to generate voucher code
+initStorage();
+
+// --- Helpers ---
+const notifyChange = () => {
+  window.dispatchEvent(new Event('nintenstore_data_change'));
+};
+
 const generateVoucherCode = (prefix: string) => {
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-    return `${prefix}-${random}`;
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${prefix}-${random}`;
 };
 
 export const StorageService = {
-  // PRODUCTS
+  // ================= PRODUCTS =================
   getProducts: (): Product[] => {
     const data = localStorage.getItem(PRODUCTS_KEY);
     return data ? JSON.parse(data) : [];
@@ -72,130 +61,126 @@ export const StorageService = {
   },
 
   saveProduct: (product: Product): void => {
-      const products = StorageService.getProducts();
-      const index = products.findIndex(p => p.id === product.id);
-      
-      if (index >= 0) {
-          // Update
-          products[index] = product;
-      } else {
-          // Add new
-          products.push(product);
-      }
-      localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
-      notifyChange();
+    const products = StorageService.getProducts();
+    const index = products.findIndex(p => p.id === product.id);
+    if (index >= 0) {
+      products[index] = product;
+    } else {
+      products.push(product);
+    }
+    localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+    notifyChange();
   },
 
   deleteProduct: (id: string): void => {
-      let products = StorageService.getProducts();
-      products = products.filter(p => p.id !== id);
-      localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
-      notifyChange();
+    let products = StorageService.getProducts();
+    products = products.filter(p => p.id !== id);
+    localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+    notifyChange();
   },
 
-  // STOCK IMPORT
+  // ================= INVENTORY / STOCK =================
   importProduct: (productId: string, quantity: number, importPrice: number, note?: string): void => {
-      // 1. Update Product Stock
-      const products = StorageService.getProducts();
-      const productIndex = products.findIndex(p => p.id === productId);
-      
-      if (productIndex >= 0) {
-          products[productIndex].stock += quantity;
-          localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
-      }
+    // 1. Update stock
+    const products = StorageService.getProducts();
+    const productIndex = products.findIndex(p => p.id === productId);
 
-      // 2. Create Import Record
-      const importsData = localStorage.getItem(IMPORTS_KEY);
-      const imports: StockImport[] = importsData ? JSON.parse(importsData) : [];
-      
-      const newImport: StockImport = {
-          id: `IMP-${Date.now()}`,
-          productId,
-          quantity,
-          importPrice,
-          totalCost: quantity * importPrice,
-          timestamp: new Date().toISOString(),
-          note
-      };
-      
-      imports.unshift(newImport); // Add to top
-      localStorage.setItem(IMPORTS_KEY, JSON.stringify(imports));
-      
-      notifyChange();
+    if (productIndex >= 0) {
+      products[productIndex].stock += quantity;
+      localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+    }
+
+    // 2. Log import
+    const importsData = localStorage.getItem(IMPORTS_KEY);
+    const imports: StockImport[] = importsData ? JSON.parse(importsData) : [];
+    const newImport: StockImport = {
+      id: `IMP-${Date.now()}`,
+      productId,
+      quantity,
+      importPrice,
+      totalCost: quantity * importPrice,
+      timestamp: new Date().toISOString(),
+      note
+    };
+
+    imports.unshift(newImport);
+    localStorage.setItem(IMPORTS_KEY, JSON.stringify(imports));
+    notifyChange();
   },
 
   getStockImports: (): StockImport[] => {
-      const data = localStorage.getItem(IMPORTS_KEY);
-      return data ? JSON.parse(data) : [];
+    const data = localStorage.getItem(IMPORTS_KEY);
+    return data ? JSON.parse(data) : [];
   },
 
-  // CATEGORIES
+  // ================= CATEGORIES =================
   getCategories: (): Category[] => {
-      const data = localStorage.getItem(CATEGORIES_KEY);
-      return data ? JSON.parse(data) : [];
+    const data = localStorage.getItem(CATEGORIES_KEY);
+    return data ? JSON.parse(data) : [];
   },
 
   saveCategory: (category: Category): void => {
-      const categories = StorageService.getCategories();
-      const index = categories.findIndex(c => c.id === category.id);
-      if (index >= 0) {
-          categories[index] = category;
-      } else {
-          categories.push(category);
-      }
-      localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
-      notifyChange();
+    const categories = StorageService.getCategories();
+    const index = categories.findIndex(c => c.id === category.id);
+    if (index >= 0) {
+      categories[index] = category;
+    } else {
+      categories.push(category);
+    }
+    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+    notifyChange();
   },
 
   deleteCategory: (id: string): void => {
-      let categories = StorageService.getCategories();
-      categories = categories.filter(c => c.id !== id);
-      localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
-      notifyChange();
+    let categories = StorageService.getCategories();
+    categories = categories.filter(c => c.id !== id);
+    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+    notifyChange();
   },
 
-  // CAMPAIGNS (MARKETING)
+  // ================= CAMPAIGNS & MARKETING =================
   getCampaigns: (): Campaign[] => {
-      const data = localStorage.getItem(CAMPAIGNS_KEY);
-      return data ? JSON.parse(data) : [];
+    const data = localStorage.getItem(CAMPAIGNS_KEY);
+    return data ? JSON.parse(data) : [];
   },
 
   getActiveCampaigns: (): Campaign[] => {
-      const campaigns = StorageService.getCampaigns();
-      const now = new Date();
-      return campaigns.filter(c => 
-          c.isActive && 
-          new Date(c.startDate) <= now && 
-          new Date(c.endDate) >= now
-      );
+    const campaigns = StorageService.getCampaigns();
+    const now = new Date();
+    return campaigns.filter(c =>
+      c.isActive &&
+      new Date(c.startDate) <= now &&
+      new Date(c.endDate) >= now
+    );
   },
 
   saveCampaign: (campaign: Campaign): void => {
-      const campaigns = StorageService.getCampaigns();
-      const index = campaigns.findIndex(c => c.id === campaign.id);
-      if (index >= 0) {
-          campaigns[index] = campaign;
-      } else {
-          campaigns.push(campaign);
-      }
-      localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
-      notifyChange();
+    const campaigns = StorageService.getCampaigns();
+    const index = campaigns.findIndex(c => c.id === campaign.id);
+    if (index >= 0) {
+      campaigns[index] = campaign;
+    } else {
+      campaigns.push(campaign);
+    }
+    localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
+    notifyChange();
   },
 
   deleteCampaign: (id: string): void => {
-      let campaigns = StorageService.getCampaigns();
-      campaigns = campaigns.filter(c => c.id !== id);
-      localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
-      notifyChange();
+    let campaigns = StorageService.getCampaigns();
+    campaigns = campaigns.filter(c => c.id !== id);
+    localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
+    notifyChange();
   },
 
-  // ORDERS & VOUCHER LOGIC
+  // ================= ORDERS =================
   createOrder: (
-    items: CartItem[], 
+    items: CartItem[],
     customerDetails: { name: string; email: string; address: string; paymentMethod: string },
     total: number,
     userId?: string,
-    initialStatus: PaymentStatus = PaymentStatus.PENDING
+    initialStatus: PaymentStatus = PaymentStatus.PENDING,
+    voucherDetails?: { code: string; discount: number }
   ): Order => {
     const ordersData = localStorage.getItem(ORDERS_KEY);
     const orders: Order[] = ordersData ? JSON.parse(ordersData) : [];
@@ -212,11 +197,19 @@ export const StorageService = {
       orderStatus: OrderStatus.PROCESSING,
       transactionId: `TXN-${Math.floor(Math.random() * 1000000)}`,
       createdAt: new Date().toISOString(),
-      userId
+      userId,
+      appliedVoucherCode: voucherDetails?.code,
+      voucherDiscountAmount: voucherDetails?.discount
     };
 
-    orders.unshift(newOrder); // Add to top
+    orders.unshift(newOrder);
     localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+    
+    // If voucher used, mark it
+    if (userId && voucherDetails?.code) {
+        StorageService.markVoucherAsUsed(userId, voucherDetails.code);
+    }
+
     notifyChange();
     return newOrder;
   },
@@ -227,207 +220,192 @@ export const StorageService = {
   },
 
   getOrdersByUserId: (userId: string, email?: string): Order[] => {
-      const orders = StorageService.getOrders();
-      return orders.filter(o => 
-          (userId && o.userId === userId) || 
-          (email && o.customerEmail === email)
-      );
+    const orders = StorageService.getOrders();
+    return orders.filter(o =>
+      (userId && o.userId === userId) ||
+      (email && o.customerEmail === email)
+    );
   },
 
   updateOrderStatus: (orderId: string, status: OrderStatus): void => {
-      const orders = StorageService.getOrders();
-      const order = orders.find(o => o.id === orderId);
-      if (order) {
-          // State transition logic
-          order.orderStatus = status;
-          if (status === OrderStatus.DELIVERED) {
-              order.paymentStatus = PaymentStatus.PAID;
-          }
+    const orders = StorageService.getOrders();
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      order.orderStatus = status;
+      if (status === OrderStatus.DELIVERED) {
+        order.paymentStatus = PaymentStatus.PAID;
+      }
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+      notifyChange();
 
-          localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-          notifyChange();
+      // Grant vouchers if applicable
+      if ((order.paymentStatus === PaymentStatus.PAID || status === OrderStatus.DELIVERED) && order.userId) {
+        StorageService.checkAndGrantVouchers(order.userId, order.items);
+      }
+    }
+  },
 
-          // --- VOUCHER GRANTING LOGIC ---
-          // If order is PAID or DELIVERED, check if we need to grant vouchers
-          if ((order.paymentStatus === PaymentStatus.PAID || status === OrderStatus.DELIVERED) && order.userId) {
-               StorageService.checkAndGrantVouchers(order.userId, order.items);
+  // ================= VOUCHERS =================
+  checkAndGrantVouchers: (userId: string, items: CartItem[]) => {
+    const activeCampaigns = StorageService.getActiveCampaigns();
+    const giftCampaigns = activeCampaigns.filter(c => c.type === 'GIFT_VOUCHER');
+
+    if (giftCampaigns.length === 0) return;
+
+    const users = StorageService.getUsers();
+    const userIdx = users.findIndex(u => u.id === userId);
+    if (userIdx === -1) return;
+
+    const user = users[userIdx];
+    let voucherGranted = false;
+
+    items.forEach(item => {
+      const applicableCampaign = giftCampaigns.find(c => c.targetProductIds.includes(item.productId));
+
+      if (applicableCampaign && applicableCampaign.voucherConfig) {
+        const cfg = applicableCampaign.voucherConfig;
+        const newVoucher: Voucher = {
+          id: `VOU-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          code: generateVoucherCode(cfg.codePrefix),
+          description: `Voucher tặng từ chiến dịch ${applicableCampaign.name}`,
+          discountType: 'PERCENT',
+          value: cfg.discountValue,
+          maxDiscountAmount: cfg.maxDiscountAmount,
+          expiryDate: new Date(Date.now() + (cfg.validDays * 24 * 60 * 60 * 1000)).toISOString(),
+          isUsed: false,
+          campaignId: applicableCampaign.id
+        };
+
+        if (!user.vouchers) user.vouchers = [];
+        user.vouchers.push(newVoucher);
+        voucherGranted = true;
+      }
+    });
+
+    if (voucherGranted) {
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      // Update session if matched
+      const sessionUser = localStorage.getItem('nintenstore_user');
+      if (sessionUser && JSON.parse(sessionUser).id === userId) {
+        localStorage.setItem('nintenstore_user', JSON.stringify(user));
+      }
+      notifyChange();
+    }
+  },
+
+  markVoucherAsUsed: (userId: string, code: string) => {
+      const users = StorageService.getUsers();
+      const userIdx = users.findIndex(u => u.id === userId);
+      if (userIdx !== -1 && users[userIdx].vouchers) {
+          const voucher = users[userIdx].vouchers!.find(v => v.code === code);
+          if (voucher) {
+              voucher.isUsed = true;
+              localStorage.setItem(USERS_KEY, JSON.stringify(users));
+              
+              // Update session
+              const sessionUser = localStorage.getItem('nintenstore_user');
+              if (sessionUser && JSON.parse(sessionUser).id === userId) {
+                 localStorage.setItem('nintenstore_user', JSON.stringify(users[userIdx]));
+              }
+              notifyChange();
           }
       }
   },
 
-  checkAndGrantVouchers: (userId: string, items: CartItem[]) => {
-       const activeCampaigns = StorageService.getActiveCampaigns();
-       const giftCampaigns = activeCampaigns.filter(c => c.type === 'GIFT_VOUCHER');
-
-       if (giftCampaigns.length === 0) return;
-
-       const users = StorageService.getUsers();
-       const userIdx = users.findIndex(u => u.id === userId);
-       
-       if (userIdx === -1) return;
-       const user = users[userIdx];
-       let voucherGranted = false;
-
-       // Check each item
-       items.forEach(item => {
-           // Find if this product triggers any campaign
-           const applicableCampaign = giftCampaigns.find(c => c.targetProductIds.includes(item.productId));
-           
-           if (applicableCampaign && applicableCampaign.voucherConfig) {
-               // Logic to prevent duplicate granting for same order/campaign combination can be added here
-               // For now, we grant 1 voucher per eligible item line
-               
-               const cfg = applicableCampaign.voucherConfig;
-               const newVoucher: Voucher = {
-                   id: `VOU-${Date.now()}-${Math.random().toString(36).substr(2,4)}`,
-                   code: generateVoucherCode(cfg.codePrefix),
-                   description: `Voucher tặng từ chiến dịch ${applicableCampaign.name}`,
-                   discountType: 'PERCENT',
-                   value: cfg.discountValue,
-                   maxDiscountAmount: cfg.maxDiscountAmount,
-                   expiryDate: new Date(Date.now() + (cfg.validDays * 24 * 60 * 60 * 1000)).toISOString(),
-                   isUsed: false,
-                   campaignId: applicableCampaign.id
-               };
-
-               if (!user.vouchers) user.vouchers = [];
-               user.vouchers.push(newVoucher);
-               voucherGranted = true;
-           }
-       });
-
-       if (voucherGranted) {
-           localStorage.setItem(USERS_KEY, JSON.stringify(users));
-           // Also update current session storage if matches
-           const sessionUser = localStorage.getItem('nintenstore_user');
-           if (sessionUser) {
-               const parsed = JSON.parse(sessionUser);
-               if (parsed.id === userId) {
-                   localStorage.setItem('nintenstore_user', JSON.stringify(user));
-               }
-           }
-           notifyChange();
-       }
-  },
-
-  // USERS
+  // ================= USERS =================
   getUsers: (): User[] => {
-      const data = localStorage.getItem(USERS_KEY);
-      return data ? JSON.parse(data) : [];
+    const data = localStorage.getItem(USERS_KEY);
+    return data ? JSON.parse(data) : [];
   },
 
   addUser: (user: User): void => {
-      const users = StorageService.getUsers();
-      // Check if exists
-      if (!users.find(u => (user.email && u.email === user.email) || (user.phoneNumber && u.phoneNumber === user.phoneNumber))) {
-          users.push({ ...user, createdAt: new Date().toISOString(), vouchers: [] });
-          localStorage.setItem(USERS_KEY, JSON.stringify(users));
-          notifyChange();
-      }
+    const users = StorageService.getUsers();
+    if (!users.find(u => (user.email && u.email === user.email) || (user.phoneNumber && u.phoneNumber === user.phoneNumber))) {
+      users.push({ ...user, createdAt: new Date().toISOString(), vouchers: [] });
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      notifyChange();
+    }
   },
 
   updateUser: (updatedUser: User): void => {
-      const users = StorageService.getUsers();
-      const index = users.findIndex(u => u.id === updatedUser.id);
-      if (index !== -1) {
-          users[index] = updatedUser;
-          localStorage.setItem(USERS_KEY, JSON.stringify(users));
-          notifyChange();
-      }
+    const users = StorageService.getUsers();
+    const index = users.findIndex(u => u.id === updatedUser.id);
+    if (index !== -1) {
+      users[index] = updatedUser;
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      notifyChange();
+    }
   },
 
-  // HERO SLIDES
+  // ================= CMS / CONFIG =================
   getHeroSlides: (): HeroSlide[] => {
-      const data = localStorage.getItem(SLIDES_KEY);
-      return data ? JSON.parse(data) : [];
+    const data = localStorage.getItem(SLIDES_KEY);
+    return data ? JSON.parse(data) : [];
   },
 
   updateHeroSlide: (updatedSlide: HeroSlide): void => {
-      const slides = StorageService.getHeroSlides();
-      const index = slides.findIndex(s => s.id === updatedSlide.id);
-      if (index >= 0) {
-          slides[index] = updatedSlide;
-          localStorage.setItem(SLIDES_KEY, JSON.stringify(slides));
-          notifyChange();
-      }
+    const slides = StorageService.getHeroSlides();
+    const index = slides.findIndex(s => s.id === updatedSlide.id);
+    if (index >= 0) {
+      slides[index] = updatedSlide;
+      localStorage.setItem(SLIDES_KEY, JSON.stringify(slides));
+      notifyChange();
+    }
   },
 
-  // SITE CONFIG
   getSiteConfig: (): SiteConfig => {
-      const data = localStorage.getItem(CONFIG_KEY);
-      let config: SiteConfig = data ? JSON.parse(data) : { facebookUrl: 'https://m.me/' };
+    const data = localStorage.getItem(CONFIG_KEY);
+    let config: SiteConfig = data ? JSON.parse(data) : { facebookUrl: 'https://m.me/' };
 
-      // Ensure defaults for Auth Config
-      if (!config.authConfig) {
-          config.authConfig = {
-            login: {
-                title: "Welcome Back, Gamer!",
-                subtitle: "Tiếp tục cuộc hành trình của bạn trong thế giới Nintendo. Hàng ngàn ưu đãi đang chờ đón.",
-                image: "https://images.unsplash.com/photo-1620287532393-273679805d77?auto=format&fit=crop&q=80&w=1500"
-            },
-            register: {
-                title: "Tham Gia Cộng Đồng",
-                subtitle: "Tạo tài khoản ngay để theo dõi đơn hàng, nhận ưu đãi độc quyền và tham gia bình luận.",
-                image: "https://images.unsplash.com/photo-1592155931584-901ac15763e3?auto=format&fit=crop&q=80&w=1500"
-            },
-            forgotPassword: {
-                title: "Quên Mật Khẩu?",
-                subtitle: "Đừng lo, hãy nhập email của bạn để chúng tôi gửi hướng dẫn đặt lại mật khẩu.",
-                image: ""
-            }
-        };
-      }
+    // Set defaults if missing
+    if (!config.authConfig) {
+      config.authConfig = {
+        login: {
+          title: "Welcome Back, Gamer!",
+          subtitle: "Tiếp tục cuộc hành trình của bạn trong thế giới Nintendo.",
+          image: "https://images.unsplash.com/photo-1620287532393-273679805d77?auto=format&fit=crop&q=80&w=1500"
+        },
+        register: {
+          title: "Tham Gia Cộng Đồng",
+          subtitle: "Tạo tài khoản ngay để theo dõi đơn hàng và nhận ưu đãi.",
+          image: "https://images.unsplash.com/photo-1592155931584-901ac15763e3?auto=format&fit=crop&q=80&w=1500"
+        },
+        forgotPassword: {
+          title: "Quên Mật Khẩu?",
+          subtitle: "Nhập email để lấy lại mật khẩu.",
+          image: ""
+        }
+      };
+    }
 
-      // Ensure defaults for Footer Config
-      if (!config.footerConfig) {
-          config.footerConfig = {
-              description: "Địa điểm mua sắm tin cậy cho cộng đồng game thủ Nintendo tại Việt Nam. Cung cấp máy game, đĩa game và phụ kiện chính hãng.",
-              copyright: "© 2023 NintenStore Vietnam. Designed with passion.",
-              sections: [
-                  {
-                      title: "Mua sắm",
-                      links: [
-                          { label: "Máy chơi game", url: "#" },
-                          { label: "Đĩa Game", url: "#" },
-                          { label: "Phụ kiện", url: "#" }
-                      ]
-                  },
-                  {
-                      title: "Hỗ trợ",
-                      links: [
-                          { label: "Trung tâm bảo hành", url: "#" },
-                          { label: "Chính sách đổi trả", url: "#" },
-                          { label: "Liên hệ chúng tôi", url: "#" }
-                      ]
-                  }
-              ]
-          };
-      }
-      
-      // Ensure defaults for Bank Config
-      if (!config.bankConfig) {
-          config.bankConfig = {
-              bankId: 'MB',
-              accountNo: '000000000000',
-              accountName: 'NINTEN STORE',
-              template: 'compact'
-          };
-      }
+    if (!config.footerConfig) {
+      config.footerConfig = {
+        description: "Địa điểm mua sắm tin cậy cho cộng đồng game thủ Nintendo tại Việt Nam.",
+        copyright: "© 2024 NintenStore Vietnam.",
+        sections: [
+          { title: "Mua sắm", links: [{ label: "Máy chơi game", url: "#" }, { label: "Đĩa Game", url: "#" }] },
+          { title: "Hỗ trợ", links: [{ label: "Trung tâm bảo hành", url: "#" }, { label: "Liên hệ", url: "#" }] }
+        ]
+      };
+    }
 
-      // Ensure defaults for Home Page Sections
-      if (!config.homeSections || config.homeSections.length === 0) {
-          config.homeSections = [
-              { id: 'sec_1', title: 'Máy Console Nổi Bật', categorySlug: 'CONSOLE', limit: 4 },
-              { id: 'sec_2', title: 'Đĩa Game Mới Nhất', categorySlug: 'GAME', limit: 8 },
-              { id: 'sec_3', title: 'Phụ Kiện Thiết Yếu', categorySlug: 'ACCESSORY', limit: 4 }
-          ];
-      }
+    if (!config.bankConfig) {
+      config.bankConfig = { bankId: 'MB', accountNo: '000000000000', accountName: 'NINTEN STORE', template: 'compact' };
+    }
 
-      return config;
+    if (!config.homeSections || config.homeSections.length === 0) {
+      config.homeSections = [
+        { id: 'sec_1', title: 'Máy Console Nổi Bật', categorySlug: 'CONSOLE', limit: 4 },
+        { id: 'sec_2', title: 'Đĩa Game Mới Nhất', categorySlug: 'GAME', limit: 8 },
+        { id: 'sec_3', title: 'Phụ Kiện Thiết Yếu', categorySlug: 'ACCESSORY', limit: 4 }
+      ];
+    }
+
+    return config;
   },
 
   saveSiteConfig: (config: SiteConfig): void => {
-      localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-      notifyChange();
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    notifyChange();
   }
 };
