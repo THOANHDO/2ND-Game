@@ -36,6 +36,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     title: 'Nintendo Switch OLED Model - White',
     description: 'Làm quen với thành viên mới nhất của gia đình Nintendo Switch. Hệ thống mới có màn hình OLED 7 inch rực rỡ, chân đế rộng có thể điều chỉnh, đế cắm có cổng LAN có dây, bộ nhớ trong 64 GB và âm thanh nâng cao.',
     price: 8490000,
+    costPrice: 7500000,
     category: CAT_CONSOLE,
     imageUrl: 'https://images.unsplash.com/photo-1640499900704-b00dd6a1103a?auto=format&fit=crop&q=80&w=1000',
     images: [
@@ -53,6 +54,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     title: 'The Legend of Zelda: Tears of the Kingdom',
     description: 'Một cuộc phiêu lưu hoành tráng trên mặt đất và bầu trời Hyrule đang chờ đón bạn trong The Legend of Zelda: Tears of the Kingdom.',
     price: 1290000,
+    costPrice: 950000,
     category: CAT_GAME,
     imageUrl: 'https://images.unsplash.com/photo-1599557438491-18e0018d052d?auto=format&fit=crop&q=80&w=1000',
     images: [
@@ -69,6 +71,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     title: 'Super Mario Bros. Wonder',
     description: 'Trò chơi Mario phong cách cuộn cảnh 2D cổ điển đã bị đảo lộn với sự ra đời của Wonder Flowers!',
     price: 1190000,
+    costPrice: 890000,
     category: CAT_GAME,
     imageUrl: 'https://images.unsplash.com/photo-1566576912906-600ace7a8582?auto=format&fit=crop&q=80&w=1000',
     images: [
@@ -85,6 +88,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     title: 'Nintendo Switch Pro Controller',
     description: 'Nâng tầm các buổi chơi game của bạn với Nintendo Switch Pro Controller.',
     price: 1690000,
+    costPrice: 1200000,
     category: CAT_ACCESSORY,
     imageUrl: 'https://images.unsplash.com/photo-1599933390231-158223d77884?auto=format&fit=crop&q=80&w=1000',
     images: [
@@ -100,6 +104,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     title: 'Mario Kart 8 Deluxe',
     description: 'Đua xe và chiến đấu với bạn bè trong phiên bản Mario Kart dứt khoát nhất.',
     price: 1150000,
+    costPrice: 850000,
     category: CAT_GAME,
     imageUrl: 'https://images.unsplash.com/photo-1605901309584-818e25960b8f?auto=format&fit=crop&q=80&w=1000',
     images: ['https://images.unsplash.com/photo-1605901309584-818e25960b8f?auto=format&fit=crop&q=80&w=1000'],
@@ -113,6 +118,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     title: 'Animal Crossing: New Horizons',
     description: 'Thoát đến một hòn đảo hoang vắng và tạo ra thiên đường của riêng bạn.',
     price: 1190000,
+    costPrice: 880000,
     category: CAT_GAME,
     imageUrl: 'https://images.unsplash.com/photo-1629814484931-e4039e6a9898?auto=format&fit=crop&q=80&w=1000',
     images: ['https://images.unsplash.com/photo-1629814484931-e4039e6a9898?auto=format&fit=crop&q=80&w=1000'],

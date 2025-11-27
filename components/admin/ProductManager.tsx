@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { Product, Category } from '../../types';
 import { StorageService } from '../../services/storage';
 import { fileToBase64 } from '../../utils/helpers';
@@ -15,6 +16,10 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, categories, r
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // Custom Dropdown State
+  const [isCatDropdownOpen, setIsCatDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   // Import Stock State
   const [importTarget, setImportTarget] = useState<Product | null>(null);
   const [importQty, setImportQty] = useState(10);
@@ -24,17 +29,29 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, categories, r
   const inputClass = "w-full border border-gray-300 bg-white text-gray-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-nintendo-red focus:border-transparent transition-all shadow-sm";
   const labelClass = "block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide";
 
+  useEffect(() => {
+    // Close dropdown when clicking outside
+    function handleClickOutside(event: MouseEvent) {
+        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            setIsCatDropdownOpen(false);
+        }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const createNewProduct = () => {
     setEditingProduct({
         id: `PROD-${Date.now()}`,
         title: '',
         description: '',
         price: 0,
+        costPrice: 0,
         category: categories.length > 0 ? categories[0].slug : 'OTHER',
-        imageUrl: 'https://via.placeholder.com/400',
+        imageUrl: '',
         images: [],
         rating: 5,
-        stock: 10,
+        stock: 0,
         releaseDate: new Date().toISOString().split('T')[0]
     });
     setIsEditing(true);
@@ -43,8 +60,46 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, categories, r
   const handleSave = (e: React.FormEvent) => {
       e.preventDefault();
       if (editingProduct) {
+          const isNew = editingProduct.id.startsWith('PROD-') && !products.find(p => p.id === editingProduct.id);
           const prodToSave = { ...editingProduct, images: editingProduct.images?.length ? editingProduct.images : [editingProduct.imageUrl] };
+          
           StorageService.saveProduct(prodToSave);
+
+          // If it's a new product and has stock > 0, automatically create an import record
+          if (isNew && prodToSave.stock > 0 && prodToSave.costPrice > 0) {
+              StorageService.importProduct(
+                  prodToSave.id, 
+                  prodToSave.stock, 
+                  prodToSave.costPrice, 
+                  "Nhập hàng đầu kỳ khi tạo sản phẩm"
+              );
+              // Note: importProduct adds to stock, but saveProduct already set stock. 
+              // To avoid double counting, we rely on the fact that StorageService.saveProduct overwrites.
+              // However, StorageService.importProduct ALSO adds stock. 
+              // Correction: StorageService.importProduct adds to EXISTING stock.
+              // If we saved stock=10, then import adds 10, total 20. 
+              // Better approach: Save product with stock 0, then import.
+              
+              // Refined Logic:
+              // 1. Save product with 0 stock initially if we want the import to drive stock.
+              // OR 2. Just create the import record manually in storage without increasing stock (need new service method).
+              
+              // Since we don't have a 'logImportOnly' method, let's do this:
+              // Save product with correct stock.
+              // Manually push import record to localstorage to avoid double counting stock in `importProduct` logic
+              // OR simpler: Just save product with stock 0, then call importProduct.
+              
+              // Let's do the "Save with 0 then Import" method to be clean and use existing logic.
+              // BUT `saveProduct` is synchronous. 
+              
+              const pWithZeroStock = { ...prodToSave, stock: 0 };
+              StorageService.saveProduct(pWithZeroStock);
+              StorageService.importProduct(prodToSave.id, prodToSave.stock, prodToSave.costPrice, "Nhập hàng đầu kỳ");
+          } else {
+              // Just save (edit mode or 0 stock)
+               StorageService.saveProduct(prodToSave);
+          }
+
           setIsEditing(false); setEditingProduct(null);
           refreshData();
       }
@@ -83,6 +138,11 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, categories, r
       }
   };
 
+  // Helper to get selected category object
+  const getSelectedCategory = () => {
+      return categories.find(c => c.slug === editingProduct?.category);
+  };
+
   if (isEditing && editingProduct) {
       return (
         <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 animate-fade-in-up">
@@ -98,21 +158,71 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, categories, r
                     <input required type="text" className={inputClass} placeholder="VD: Nintendo Switch OLED..." value={editingProduct.title} onChange={e => setEditingProduct({...editingProduct, title: e.target.value})} />
                 </div>
                 
-                <div>
-                    <label className={labelClass}>Giá bán lẻ (VND)</label>
-                    <input required type="number" className={inputClass} value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: Number(e.target.value)})} />
+                {/* Price Section */}
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 col-span-2 grid md:grid-cols-2 gap-6">
+                    <div>
+                        <label className={labelClass}>Giá vốn (Giá nhập)</label>
+                        <div className="relative">
+                            <input required type="number" min="0" className={inputClass} value={editingProduct.costPrice || 0} onChange={e => setEditingProduct({...editingProduct, costPrice: Number(e.target.value)})} />
+                            <span className="absolute right-4 top-3 text-gray-500 font-bold text-sm">VND</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Dùng để tính lợi nhuận.</p>
+                    </div>
+                    <div>
+                        <label className={labelClass}>Giá bán lẻ</label>
+                        <div className="relative">
+                            <input required type="number" min="0" className={inputClass} value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: Number(e.target.value)})} />
+                            <span className="absolute right-4 top-3 text-gray-500 font-bold text-sm">VND</span>
+                        </div>
+                    </div>
                 </div>
                 
                 <div>
                     <label className={labelClass}>Danh mục</label>
-                    <div className="relative">
-                        <select className={`${inputClass} appearance-none cursor-pointer`} value={editingProduct.category} onChange={e => setEditingProduct({...editingProduct, category: e.target.value})}>
-                            {categories.map(cat => (<option key={cat.id} value={cat.slug}>{cat.name}</option>))}
-                        </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700">
-                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                        </div>
+                    <div className="relative" ref={dropdownRef}>
+                        <button 
+                            type="button"
+                            onClick={() => setIsCatDropdownOpen(!isCatDropdownOpen)}
+                            className="w-full border border-gray-300 bg-white text-gray-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-nintendo-red text-left flex items-center justify-between"
+                        >
+                            <span className="flex items-center gap-2">
+                                {getSelectedCategory()?.icon && <span className="material-icons-round text-nintendo-red">{getSelectedCategory()?.icon}</span>}
+                                {getSelectedCategory()?.name || 'Chọn danh mục'}
+                            </span>
+                            <span className="material-icons-round text-gray-400">arrow_drop_down</span>
+                        </button>
+                        
+                        {isCatDropdownOpen && (
+                            <div className="absolute z-10 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-auto">
+                                {categories.map(cat => (
+                                    <button
+                                        key={cat.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setEditingProduct({...editingProduct, category: cat.slug});
+                                            setIsCatDropdownOpen(false);
+                                        }}
+                                        className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 border-b border-gray-50 last:border-0"
+                                    >
+                                        <div className="w-8 h-8 rounded-full bg-red-50 text-nintendo-red flex items-center justify-center">
+                                            <span className="material-icons-round text-lg">{cat.icon}</span>
+                                        </div>
+                                        <span className={`font-bold ${editingProduct.category === cat.slug ? 'text-nintendo-red' : 'text-gray-700'}`}>
+                                            {cat.name}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
+                </div>
+
+                <div>
+                    <label className={labelClass}>Tồn kho ban đầu</label>
+                    <input required type="number" min="0" className={inputClass} value={editingProduct.stock} onChange={e => setEditingProduct({...editingProduct, stock: Number(e.target.value)})} />
+                    {editingProduct.id.startsWith('PROD-') && editingProduct.stock > 0 && (
+                        <p className="text-xs text-green-600 mt-1 font-bold">* Sẽ tự động tạo phiếu nhập kho đầu kỳ</p>
+                    )}
                 </div>
 
                 <div className="col-span-2">
@@ -183,7 +293,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, categories, r
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <table className="w-full text-left text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr><th className="px-6 py-4 font-bold text-gray-700">Thông tin</th><th className="px-6 py-4 font-bold text-gray-700">Giá bán</th><th className="px-6 py-4 font-bold text-gray-700">Tồn kho</th><th className="px-6 py-4 font-bold text-gray-700">Thao tác</th></tr>
+                    <tr><th className="px-6 py-4 font-bold text-gray-700">Thông tin</th><th className="px-6 py-4 font-bold text-gray-700">Giá & Vốn</th><th className="px-6 py-4 font-bold text-gray-700">Tồn kho</th><th className="px-6 py-4 font-bold text-gray-700">Thao tác</th></tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                     {products.map(p => (
@@ -199,7 +309,10 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, categories, r
                                     </div>
                                 </div>
                             </td>
-                            <td className="px-6 py-4 font-bold text-nintendo-red">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.price)}</td>
+                            <td className="px-6 py-4">
+                                <div className="text-nintendo-red font-bold">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.price)}</div>
+                                <div className="text-gray-400 text-xs">Vốn: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.costPrice || 0)}</div>
+                            </td>
                             <td className="px-6 py-4">
                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${p.stock > 10 ? 'bg-green-100 text-green-800' : p.stock > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
                                     {p.stock}
@@ -207,7 +320,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, categories, r
                             </td>
                             <td className="px-6 py-4">
                                 <div className="flex gap-2">
-                                    <button onClick={() => { setImportTarget(p); setImportCost(p.price * 0.7); }} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Nhập hàng"><span className="material-icons-round text-lg">inventory</span></button>
+                                    <button onClick={() => { setImportTarget(p); setImportCost(p.costPrice || p.price * 0.7); }} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Nhập hàng"><span className="material-icons-round text-lg">inventory</span></button>
                                     <button onClick={() => { setEditingProduct(p); setIsEditing(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Chỉnh sửa"><span className="material-icons-round text-lg">edit</span></button>
                                     <button onClick={() => { setDeleteId(p.id); setShowDeleteModal(true); }} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Xóa"><span className="material-icons-round text-lg">delete</span></button>
                                 </div>
@@ -252,7 +365,11 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, categories, r
                   </div>
                   <form onSubmit={handleImportStock} className="space-y-4">
                       <div><label className={labelClass}>Số lượng nhập thêm</label><input type="number" min="1" className={inputClass} value={importQty} onChange={(e) => setImportQty(parseInt(e.target.value) || 0)} /></div>
-                      <div><label className={labelClass}>Giá vốn (VND/SP)</label><input type="number" min="0" className={inputClass} value={importCost} onChange={(e) => setImportCost(Number(e.target.value) || 0)} /></div>
+                      <div>
+                          <label className={labelClass}>Giá vốn (VND/SP)</label>
+                          <input type="number" min="0" className={inputClass} value={importCost} onChange={(e) => setImportCost(Number(e.target.value) || 0)} />
+                          <p className="text-[10px] text-gray-500 mt-1">Sẽ tự động cập nhật giá vốn mới cho sản phẩm</p>
+                      </div>
                       <div><label className={labelClass}>Ghi chú nhập hàng</label><textarea className={inputClass} rows={2} value={importNote} onChange={(e) => setImportNote(e.target.value)} placeholder="VD: Nhập lô hàng tháng 10..." /></div>
                       <button type="submit" className="w-full mt-4 px-4 py-3 rounded-xl bg-green-600 text-white font-bold hover:bg-green-700 transition-colors shadow-lg shadow-green-500/30">Xác nhận nhập kho</button>
                   </form>

@@ -58,6 +58,7 @@ export interface Product {
   title: string;
   description: string;
   price: number;
+  costPrice: number; // New: Giá vốn nhập vào
   category: string;
   imageUrl: string; 
   images: string[]; 
