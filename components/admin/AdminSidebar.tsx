@@ -1,7 +1,8 @@
+
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-export type Tab = 'DASHBOARD' | 'PRODUCTS' | 'CATEGORIES' | 'ORDERS' | 'CUSTOMERS' | 'CONTENT';
+export type Tab = 'DASHBOARD' | 'PRODUCTS' | 'CATEGORIES' | 'ORDERS' | 'CUSTOMERS' | 'CONTENT' | 'MARKETING';
 
 interface AdminSidebarProps {
   activeTab: Tab;
@@ -13,6 +14,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ activeTab, setActiveTab }) 
     { id: 'DASHBOARD', label: 'Tổng Quan', icon: 'dashboard' },
     { id: 'PRODUCTS', label: 'Sản Phẩm', icon: 'inventory_2' },
     { id: 'CATEGORIES', label: 'Danh Mục', icon: 'category' },
+    { id: 'MARKETING', label: 'Marketing', icon: 'campaign' },
     { id: 'ORDERS', label: 'Đơn Hàng', icon: 'shopping_bag' },
     { id: 'CUSTOMERS', label: 'Khách Hàng', icon: 'people' },
     { id: 'CONTENT', label: 'Giao Diện Web', icon: 'web' },

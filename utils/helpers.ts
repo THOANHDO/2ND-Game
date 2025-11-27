@@ -1,3 +1,6 @@
+
+import { Campaign, Product } from "../types";
+
 /**
  * Chuyển đổi chuỗi tiếng Việt có dấu thành không dấu
  * Ví dụ: "Điện Tử" -> "dien tu"
@@ -41,4 +44,38 @@ export const fileToBase64 = (file: File): Promise<string> => {
         reader.onload = () => resolve(reader.result as string);
         reader.onerror = error => reject(error);
     });
+};
+
+/**
+ * Calculate final price and find applicable campaign for a product
+ */
+export const calculateProductPrice = (product: Product, campaigns: Campaign[]) => {
+    // Find best active discount campaign
+    const discountCampaign = campaigns.find(c => 
+        c.type === 'DISCOUNT_PERCENT' && 
+        c.targetProductIds.includes(product.id) &&
+        c.isActive
+    );
+
+    const giftCampaign = campaigns.find(c =>
+        c.type === 'GIFT_VOUCHER' &&
+        c.targetProductIds.includes(product.id) &&
+        c.isActive
+    );
+
+    let finalPrice = product.price;
+    let discountPercent = 0;
+
+    if (discountCampaign) {
+        discountPercent = discountCampaign.value;
+        finalPrice = product.price * (1 - discountPercent / 100);
+    }
+
+    return {
+        originalPrice: product.price,
+        finalPrice,
+        discountPercent,
+        discountCampaign,
+        giftCampaign
+    };
 };

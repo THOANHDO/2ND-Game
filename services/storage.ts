@@ -1,5 +1,5 @@
 
-import { Product, Order, OrderStatus, PaymentStatus, CartItem, User, HeroSlide, SiteConfig, Category, StockImport, BankConfig } from '../types';
+import { Product, Order, OrderStatus, PaymentStatus, CartItem, User, HeroSlide, SiteConfig, Category, StockImport, BankConfig, Campaign, Voucher } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CATEGORIES } from './data';
 
 const PRODUCTS_KEY = 'nintenstore_products';
@@ -9,6 +9,7 @@ const SLIDES_KEY = 'nintenstore_hero_slides';
 const CONFIG_KEY = 'nintenstore_site_config';
 const CATEGORIES_KEY = 'nintenstore_categories';
 const IMPORTS_KEY = 'nintenstore_stock_imports';
+const CAMPAIGNS_KEY = 'nintenstore_campaigns';
 
 // Initialize DB
 if (!localStorage.getItem(PRODUCTS_KEY)) {
@@ -26,6 +27,9 @@ if (!localStorage.getItem(CATEGORIES_KEY)) {
 if (!localStorage.getItem(IMPORTS_KEY)) {
   localStorage.setItem(IMPORTS_KEY, JSON.stringify([]));
 }
+if (!localStorage.getItem(CAMPAIGNS_KEY)) {
+  localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify([]));
+}
 if (!localStorage.getItem(USERS_KEY)) {
     // Seed an admin
     const adminUser: User = {
@@ -35,7 +39,8 @@ if (!localStorage.getItem(USERS_KEY)) {
         role: 'ADMIN',
         createdAt: new Date().toISOString(),
         avatar: 'https://ui-avatars.com/api/?name=Admin&background=000&color=fff',
-        addresses: []
+        addresses: [],
+        vouchers: []
     };
     localStorage.setItem(USERS_KEY, JSON.stringify([adminUser]));
 }
@@ -46,6 +51,12 @@ if (!localStorage.getItem(CONFIG_KEY)) {
 // Helper to notify listeners
 const notifyChange = () => {
     window.dispatchEvent(new Event('nintenstore_data_change'));
+};
+
+// Private helper to generate voucher code
+const generateVoucherCode = (prefix: string) => {
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `${prefix}-${random}`;
 };
 
 export const StorageService = {
@@ -143,7 +154,42 @@ export const StorageService = {
       notifyChange();
   },
 
-  // ORDERS
+  // CAMPAIGNS (MARKETING)
+  getCampaigns: (): Campaign[] => {
+      const data = localStorage.getItem(CAMPAIGNS_KEY);
+      return data ? JSON.parse(data) : [];
+  },
+
+  getActiveCampaigns: (): Campaign[] => {
+      const campaigns = StorageService.getCampaigns();
+      const now = new Date();
+      return campaigns.filter(c => 
+          c.isActive && 
+          new Date(c.startDate) <= now && 
+          new Date(c.endDate) >= now
+      );
+  },
+
+  saveCampaign: (campaign: Campaign): void => {
+      const campaigns = StorageService.getCampaigns();
+      const index = campaigns.findIndex(c => c.id === campaign.id);
+      if (index >= 0) {
+          campaigns[index] = campaign;
+      } else {
+          campaigns.push(campaign);
+      }
+      localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
+      notifyChange();
+  },
+
+  deleteCampaign: (id: string): void => {
+      let campaigns = StorageService.getCampaigns();
+      campaigns = campaigns.filter(c => c.id !== id);
+      localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
+      notifyChange();
+  },
+
+  // ORDERS & VOUCHER LOGIC
   createOrder: (
     items: CartItem[], 
     customerDetails: { name: string; email: string; address: string; paymentMethod: string },
@@ -192,10 +238,76 @@ export const StorageService = {
       const orders = StorageService.getOrders();
       const order = orders.find(o => o.id === orderId);
       if (order) {
+          // State transition logic
           order.orderStatus = status;
+          if (status === OrderStatus.DELIVERED) {
+              order.paymentStatus = PaymentStatus.PAID;
+          }
+
           localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
           notifyChange();
+
+          // --- VOUCHER GRANTING LOGIC ---
+          // If order is PAID or DELIVERED, check if we need to grant vouchers
+          if ((order.paymentStatus === PaymentStatus.PAID || status === OrderStatus.DELIVERED) && order.userId) {
+               StorageService.checkAndGrantVouchers(order.userId, order.items);
+          }
       }
+  },
+
+  checkAndGrantVouchers: (userId: string, items: CartItem[]) => {
+       const activeCampaigns = StorageService.getActiveCampaigns();
+       const giftCampaigns = activeCampaigns.filter(c => c.type === 'GIFT_VOUCHER');
+
+       if (giftCampaigns.length === 0) return;
+
+       const users = StorageService.getUsers();
+       const userIdx = users.findIndex(u => u.id === userId);
+       
+       if (userIdx === -1) return;
+       const user = users[userIdx];
+       let voucherGranted = false;
+
+       // Check each item
+       items.forEach(item => {
+           // Find if this product triggers any campaign
+           const applicableCampaign = giftCampaigns.find(c => c.targetProductIds.includes(item.productId));
+           
+           if (applicableCampaign && applicableCampaign.voucherConfig) {
+               // Logic to prevent duplicate granting for same order/campaign combination can be added here
+               // For now, we grant 1 voucher per eligible item line
+               
+               const cfg = applicableCampaign.voucherConfig;
+               const newVoucher: Voucher = {
+                   id: `VOU-${Date.now()}-${Math.random().toString(36).substr(2,4)}`,
+                   code: generateVoucherCode(cfg.codePrefix),
+                   description: `Voucher tặng từ chiến dịch ${applicableCampaign.name}`,
+                   discountType: 'PERCENT',
+                   value: cfg.discountValue,
+                   maxDiscountAmount: cfg.maxDiscountAmount,
+                   expiryDate: new Date(Date.now() + (cfg.validDays * 24 * 60 * 60 * 1000)).toISOString(),
+                   isUsed: false,
+                   campaignId: applicableCampaign.id
+               };
+
+               if (!user.vouchers) user.vouchers = [];
+               user.vouchers.push(newVoucher);
+               voucherGranted = true;
+           }
+       });
+
+       if (voucherGranted) {
+           localStorage.setItem(USERS_KEY, JSON.stringify(users));
+           // Also update current session storage if matches
+           const sessionUser = localStorage.getItem('nintenstore_user');
+           if (sessionUser) {
+               const parsed = JSON.parse(sessionUser);
+               if (parsed.id === userId) {
+                   localStorage.setItem('nintenstore_user', JSON.stringify(user));
+               }
+           }
+           notifyChange();
+       }
   },
 
   // USERS
@@ -208,7 +320,7 @@ export const StorageService = {
       const users = StorageService.getUsers();
       // Check if exists
       if (!users.find(u => (user.email && u.email === user.email) || (user.phoneNumber && u.phoneNumber === user.phoneNumber))) {
-          users.push({ ...user, createdAt: new Date().toISOString() });
+          users.push({ ...user, createdAt: new Date().toISOString(), vouchers: [] });
           localStorage.setItem(USERS_KEY, JSON.stringify(users));
           notifyChange();
       }

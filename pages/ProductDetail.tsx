@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { StorageService } from '../services/storage';
-import { Product, Category } from '../types';
+import { Product, Category, Campaign } from '../types';
+import { calculateProductPrice } from '../utils/helpers';
 
 interface ProductDetailProps {
   onAddToCart: (p: Product) => void;
@@ -14,6 +15,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ onAddToCart }) => {
   const [product, setProduct] = useState<Product | undefined>(undefined);
   const [activeImage, setActiveImage] = useState<string>('');
   const [category, setCategory] = useState<Category | undefined>(undefined);
+  const [activeCampaigns, setActiveCampaigns] = useState<Campaign[]>([]);
   
   useEffect(() => {
     const loadProduct = () => {
@@ -22,16 +24,17 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ onAddToCart }) => {
           if (found) {
             setProduct(found);
             // Only update active image if it wasn't set or if it's the first load
-            // We want to avoid resetting the user's selected image if they are just viewing updates
             if (!activeImage) setActiveImage(found.imageUrl);
             
             // Find category
             const cats = StorageService.getCategories();
             const cat = cats.find(c => c.slug === found.category);
             setCategory(cat);
+            
+            // Campaigns
+            setActiveCampaigns(StorageService.getActiveCampaigns());
           } else {
-              // If product deleted while viewing, maybe redirect or show error?
-              // For now, let's just leave it undefined and show loading/not found
+              // If product deleted
           }
         }
     };
@@ -43,13 +46,14 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ onAddToCart }) => {
     return () => {
         window.removeEventListener('nintenstore_data_change', loadProduct);
     };
-  }, [id]); // Keep activeImage out of deps to avoid reset on re-render
+  }, [id]);
 
   if (!product) {
     return <div className="min-h-screen flex items-center justify-center">Sản phẩm không tồn tại hoặc đã bị xóa. <button onClick={() => navigate('/shop')} className="ml-2 text-blue-600 underline">Quay lại</button></div>;
   }
 
   const imageList = product.images && product.images.length > 0 ? product.images : [product.imageUrl];
+  const { finalPrice, discountPercent, discountCampaign, giftCampaign } = calculateProductPrice(product, activeCampaigns);
 
   return (
     <div className="min-h-screen bg-white pb-20">
@@ -75,6 +79,11 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ onAddToCart }) => {
                     alt={product.title} 
                     className="w-full h-full object-contain p-8 transition-transform duration-500 group-hover:scale-105" 
                 />
+                 {discountPercent > 0 && (
+                    <div className="absolute top-4 left-4 bg-nintendo-red text-white font-black text-xl px-4 py-2 rounded-xl shadow-lg transform -rotate-3">
+                        SALE -{discountPercent}%
+                    </div>
+                )}
             </div>
             <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
                 {imageList.map((img, idx) => (
@@ -115,13 +124,46 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ onAddToCart }) => {
                      {product.stock > 0 ? 'Còn hàng' : 'Hết hàng'}
                  </span>
              </div>
-
-             <div className="bg-gray-50 p-6 rounded-2xl mb-8">
-                 <p className="text-gray-500 text-sm mb-1">Giá bán chính hãng</p>
-                 <div className="text-4xl font-extrabold text-nintendo-red">
-                     {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}
-                 </div>
+             
+             {/* Pricing Block */}
+             <div className="bg-gray-50 p-6 rounded-2xl mb-6">
+                 {discountPercent > 0 ? (
+                    <div>
+                        <div className="flex items-center gap-2 mb-1">
+                             <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded uppercase">
+                                 {discountCampaign?.name}
+                             </span>
+                        </div>
+                        <p className="text-gray-500 text-sm mb-1 line-through font-medium">Giá gốc: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</p>
+                        <div className="flex items-center gap-3">
+                            <div className="text-4xl font-extrabold text-nintendo-red">
+                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(finalPrice)}
+                            </div>
+                            <span className="text-red-600 font-bold bg-white border border-red-100 px-2 py-1 rounded-lg">Tiết kiệm {discountPercent}%</span>
+                        </div>
+                    </div>
+                 ) : (
+                    <div>
+                        <p className="text-gray-500 text-sm mb-1">Giá bán chính hãng</p>
+                        <div className="text-4xl font-extrabold text-nintendo-red">
+                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}
+                        </div>
+                    </div>
+                 )}
              </div>
+
+             {/* Gift Campaign Block */}
+             {giftCampaign && giftCampaign.voucherConfig && (
+                 <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl mb-8 flex gap-4 items-start">
+                     <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                         <span className="material-icons-round text-xl">card_giftcard</span>
+                     </div>
+                     <div>
+                         <h4 className="font-bold text-gray-900 text-sm uppercase mb-1">{giftCampaign.name}</h4>
+                         <p className="text-gray-600 text-sm">Mua ngay để nhận Voucher quà tặng: <span className="font-mono font-bold text-blue-600 bg-white px-1.5 py-0.5 rounded border border-blue-200">{giftCampaign.voucherConfig.codePrefix}-****</span></p>
+                     </div>
+                 </div>
+             )}
 
              <div className="prose prose-sm text-gray-600 mb-8 line-clamp-3">
                  {product.description}
@@ -136,11 +178,6 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ onAddToCart }) => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
                      </svg>
                      Thêm vào giỏ ngay
-                 </button>
-                 <button className="bg-gray-100 hover:bg-gray-200 text-gray-800 p-4 rounded-2xl transition-colors">
-                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                     </svg>
                  </button>
              </div>
           </div>

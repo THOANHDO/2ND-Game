@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { Product, Order, User, HeroSlide, SiteConfig, Category, StockImport } from '../types';
@@ -10,6 +11,7 @@ import CategoryManager from '../components/admin/CategoryManager';
 import OrderManager from '../components/admin/OrderManager';
 import CustomerManager from '../components/admin/CustomerManager';
 import ContentManager from '../components/admin/ContentManager';
+import MarketingManager from '../components/admin/MarketingManager';
 
 const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('DASHBOARD');
@@ -58,6 +60,9 @@ const AdminDashboard: React.FC = () => {
               )}
               {activeTab === 'CATEGORIES' && (
                 <CategoryManager categories={categories} refreshData={refreshData} />
+              )}
+              {activeTab === 'MARKETING' && (
+                <MarketingManager products={products} />
               )}
               {activeTab === 'ORDERS' && (
                 <OrderManager orders={orders} refreshData={refreshData} />

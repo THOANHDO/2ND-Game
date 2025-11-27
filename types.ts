@@ -40,6 +40,19 @@ export interface Address {
     isDefault: boolean;
 }
 
+export interface Voucher {
+    id: string;
+    code: string; // Generated code e.g. SUMMER-X829
+    description: string;
+    discountType: 'PERCENT' | 'FIXED';
+    value: number; // 10% or 50000 VND
+    maxDiscountAmount?: number; // Only for PERCENT
+    expiryDate: string;
+    isUsed: boolean;
+    campaignId?: string;
+    minOrderAmount?: number;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -49,7 +62,8 @@ export interface User {
   avatar?: string;
   dob?: string;        
   city?: string;
-  addresses?: Address[]; // New: List of saved addresses
+  addresses?: Address[];
+  vouchers?: Voucher[]; // New: User's voucher wallet
   createdAt?: string;
 }
 
@@ -109,6 +123,31 @@ export interface StockImport {
     totalCost: number;
     timestamp: string;
     note?: string;
+}
+
+// --- Marketing Interfaces ---
+
+export type CampaignType = 'DISCOUNT_PERCENT' | 'GIFT_VOUCHER';
+
+export interface VoucherConfig {
+    codePrefix: string; // e.g. SALE2024
+    discountValue: number; // e.g. 10 (%)
+    maxDiscountAmount: number; // e.g. 50000 (VND)
+    validDays: number; // e.g. 30 (days from granting)
+    minOrderAmount?: number;
+}
+
+export interface Campaign {
+    id: string;
+    name: string;
+    description?: string;
+    type: CampaignType;
+    value: number; // Percentage for direct discount
+    voucherConfig?: VoucherConfig; // For GIFT_VOUCHER type
+    targetProductIds: string[]; // List of products applied
+    startDate: string;
+    endDate: string;
+    isActive: boolean;
 }
 
 // --- Configuration Interfaces ---

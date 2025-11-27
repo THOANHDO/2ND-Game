@@ -26,7 +26,7 @@ const Profile: React.FC = () => {
     const navigate = useNavigate();
     const [user, setUser] = useState<User | null>(null);
     const [orders, setOrders] = useState<Order[]>([]);
-    const [activeTab, setActiveTab] = useState<'INFO' | 'ORDERS' | 'ADDRESS'>('INFO');
+    const [activeTab, setActiveTab] = useState<'INFO' | 'ORDERS' | 'ADDRESS' | 'VOUCHERS'>('INFO');
     const [isEditing, setIsEditing] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -221,6 +221,13 @@ const Profile: React.FC = () => {
                                 >
                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                     Sổ địa chỉ
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('VOUCHERS')}
+                                    className={`w-full py-2 px-4 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${activeTab === 'VOUCHERS' ? 'bg-nintendo-red text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                                >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>
+                                    Kho Voucher
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('ORDERS')}
@@ -442,6 +449,46 @@ const Profile: React.FC = () => {
                                             </div>
                                         )}
                                     </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'VOUCHERS' && (
+                                <div>
+                                    <h3 className="text-2xl font-bold text-gray-900 mb-6">Kho Voucher</h3>
+                                    {!user.vouchers || user.vouchers.length === 0 ? (
+                                        <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-dashed border-gray-200">
+                                            <span className="material-icons-round text-4xl mb-2 text-gray-300">confirmation_number</span>
+                                            <p>Bạn chưa có voucher nào.</p>
+                                            <p className="text-xs mt-2">Hãy mua các sản phẩm có khuyến mãi tặng kèm voucher để nhận ưu đãi!</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            {user.vouchers.map(v => (
+                                                <div key={v.id} className={`relative overflow-hidden rounded-xl border flex ${v.isUsed ? 'bg-gray-100 border-gray-200 grayscale opacity-70' : 'bg-white border-nintendo-red shadow-md'}`}>
+                                                    <div className={`w-32 flex items-center justify-center p-4 border-r border-dashed ${v.isUsed ? 'bg-gray-200 text-gray-400' : 'bg-red-50 text-nintendo-red border-red-200'}`}>
+                                                        <div className="text-center">
+                                                            <div className="text-2xl font-black">{v.value}%</div>
+                                                            <div className="text-xs font-bold uppercase">Giảm giá</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex-1 p-4 flex flex-col justify-center">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <span className="font-bold text-gray-800 text-lg tracking-wider font-mono bg-gray-50 px-2 py-0.5 rounded border border-gray-200">{v.code}</span>
+                                                            {v.isUsed && <span className="text-xs bg-gray-300 text-white px-2 py-1 rounded font-bold">ĐÃ DÙNG</span>}
+                                                        </div>
+                                                        <p className="text-sm text-gray-600 mb-1">{v.description}</p>
+                                                        <div className="text-xs text-gray-400 flex flex-col gap-0.5">
+                                                            <span>Giảm tối đa: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v.maxDiscountAmount || 0)}</span>
+                                                            <span>HSD: {new Date(v.expiryDate).toLocaleDateString('vi-VN')}</span>
+                                                        </div>
+                                                    </div>
+                                                    {/* Decorative Circles */}
+                                                    <div className="absolute -top-3 left-[7.5rem] w-6 h-6 bg-gray-50 rounded-full"></div>
+                                                    <div className="absolute -bottom-3 left-[7.5rem] w-6 h-6 bg-gray-50 rounded-full"></div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
